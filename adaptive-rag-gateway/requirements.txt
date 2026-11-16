@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+chromadb>=0.4.24
+sentence-transformers>=2.7.0
+scikit-learn>=1.4.2
+joblib>=1.4.0
+pandas>=2.2.1
+openai>=1.14.1
+python-dotenv>=1.0.1
+tiktoken>=0.6.0
+datasets>=2.18.0

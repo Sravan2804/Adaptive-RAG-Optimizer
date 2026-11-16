@@ -1,0 +1,94 @@
+query,label
+"What is 25 * 48?",0
+"Define idempotency in REST APIs.",0
+"How do you implement binary search in Python?",0
+"What is the capital of Japan?",0
+"Explain the difference between TCP and UDP protocols.",0
+"Calculate 15 percent of 450.",0
+"What is the speed of light in meters per second?",0
+"Who wrote Romeo and Juliet?",0
+"Explain polymorphism in object-oriented programming.",0
+"How does garbage collection work in Java?",0
+"What is the Pythagorean theorem formula?",0
+"Convert 100 Fahrenheit to Celsius.",0
+"What is a RESTful API and how does it work?",0
+"Hello, can you assist me with some questions?",0
+"What is the boiling point of water at sea level?",0
+"Explain how quicksort works algorithmically.",0
+"What is the difference between synchronous and asynchronous execution?",0
+"Write a Python lambda function to square numbers.",0
+"What is an HTTP 500 internal server error?",0
+"Explain the concept of database normalization.",0
+"What is 128 divided by 16?",0
+"How many planets are in the solar system?",0
+"What is the function of mitochondria in a cell?",0
+"Explain how TLS/SSL encryption handshakes work.",0
+"What is the difference between a process and a thread?",0
+"Calculate the square root of 256.",0
+"What is a closure in JavaScript?",0
+"Explain the difference between SQL and NoSQL databases.",0
+"What does ACID stand for in database transactions?",0
+"How do promises work in JavaScript?",0
+"What is the time complexity of lookup in a hash map?",0
+"Summarize the plot of the novel 1984.",0
+"What is the value of Pi to 5 decimal places?",0
+"Explain how gradient descent works in machine learning.",0
+"What is dependency injection in software architecture?",0
+"What is the EU cooling-off period for digital goods?",1
+"What encryption standard is used for European data residency?",1
+"What is the API rate limit for free tier accounts?",1
+"What is the API rate limit for Pro tier accounts?",1
+"How often do Bearer authentication tokens expire?",1
+"Where is European customer data stored in AWS?",1
+"What is the US return policy for hardware?",1
+"What was the enterprise churn rate in Q1?",1
+"What was the enterprise churn percentage in Q2?",1
+"What was the enterprise churn rate in Q3?",1
+"What is the SLA uptime threshold for enterprise refunds?",1
+"Which AWS region holds European customer data?",1
+"What caused enterprise churn in Q1?",1
+"What header is required for API authentication?",1
+"Are enterprise contracts refundable after sign-off?",1
+"What is the US return window for physical hardware?",1
+"What was released in Q2 to reduce enterprise churn?",1
+"Why did Q3 enterprise churn increase slightly?",1
+"What packaging is required for a US hardware refund?",1
+"How many requests per minute can a Pro tier API account make?",1
+"How many requests per minute are allowed on the free tier?",1
+"What is the cooling-off period for hardware in the EU?",1
+"Which encryption algorithm is used at rest for European data?",1
+"In which city is the EU data center located?",1
+"What primary driver caused the 4.2% churn in Q1?",1
+"What feature dropped churn to 2.8% in Q2?",1
+"What pricing change affected renewals in Q3?",1
+"When do API authorization bearer tokens expire?",1
+"What is the uptime SLA requirement for enterprise contract refunds?",1
+"Where is US customer data stored?",1
+"What is the return window under US refund policy?",1
+"Under EU consumer directives how long is the cooling-off for digital goods?",1
+"What AWS region is used for European customer data residency?",1
+"Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened.",2
+"List all refund conditions across US, EU, and Enterprise tiers.",2
+"Compare enterprise churn trends across Q1 and Q3.",2
+"How do refund policies differ between US, EU, and Enterprise contracts?",2
+"Analyze the enterprise churn trends from Q1 through Q3 and their primary drivers.",2
+"Summarize all security, authentication, and data residency policies.",2
+"Compare enterprise churn between Q1 and Q2 after SAML was introduced.",2
+"How do return policies for hardware differ between the US and the EU?",2
+"Provide a comprehensive report on enterprise churn and factors from Q1 to Q3.",2
+"Synthesize our API rate limits, authentication requirements, and data residency policies.",2
+"Compare the return windows and cooling-off periods across all jurisdictions.",2
+"Summarize the differences in churn rates and causes between Q1, Q2, and Q3.",2
+"Provide a comprehensive overview of refund eligibility across US, EU, and Enterprise.",2
+"Explain the relationship between SAML 2.0 release in Q2 and churn compared to Q1.",2
+"Compare all API rate limits across free and pro tiers and describe authentication rules.",2
+"Evaluate the complete progression of churn from Q1 to Q3 detailing all mitigating factors.",2
+"List all refund terms, return windows, and SLA exceptions across every customer type.",2
+"Provide an end-to-end summary of European data residency, encryption, and API auth security.",2
+"Compare US hardware return policy with EU cooling-off rules for both digital and physical goods.",2
+"Analyze how missing SSO affected Q1 and how automated migration scripts improved Q2.",2
+"Synthesize all policies regarding refunds, churn analysis, and platform rate limits.",2
+"Compare quarterly enterprise churn shifts across the entire fiscal year to date.",2
+"Provide a full comparison of US, European, and Enterprise refund guidelines and prerequisites.",2
+"Detail all infrastructure policies including AWS hosting regions, encryption at rest, and token auth.",2
+"Cross-reference Q1, Q2, and Q3 churn metrics against product changes and pricing restructuring.",2
