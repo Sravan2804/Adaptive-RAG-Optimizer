@@ -1,0 +1,12 @@
+[
+  {"id": "doc_1", "text": "Refund Policy (US): Customers may return physical hardware within 30 days of delivery for a full refund if original packaging is intact."},
+  {"id": "doc_2", "text": "Refund Policy (EU): Under EU consumer directives, customers have a 14-day cooling-off period for digital goods and 30 days for hardware."},
+  {"id": "doc_3", "text": "Refund Policy (Enterprise): Custom enterprise contracts are non-refundable after deployment sign-off unless SLA uptime drops below 99.5%."},
+  {"id": "doc_4", "text": "API Rate Limits: Free tier accounts are capped at 60 requests per minute. Pro tier accounts allow 600 requests per minute."},
+  {"id": "doc_5", "text": "Authentication: All API calls require a Bearer token passed in the Authorization header. Tokens expire every 24 hours."},
+  {"id": "doc_6", "text": "Q1 Churn Analysis: Q1 enterprise churn was 4.2%, primarily driven by missing SSO integrations and slow onboarding times."},
+  {"id": "doc_7", "text": "Q2 Churn Analysis: Q2 enterprise churn dropped to 2.8% following the release of SAML 2.0 support and automated migration scripts."},
+  {"id": "doc_8", "text": "Q3 Churn Analysis: Q3 enterprise churn rose slightly to 3.1% due to pricing tier restructuring affecting mid-market renewals."},
+  {"id": "doc_9", "text": "Data Residency: European customer data is stored exclusively in AWS eu-west-1 (Dublin) with AES-256 encryption at rest."},
+  {"id": "doc_10", "text": "Data Residency (US): US customer data is stored exclusively in AWS us-east-1 (N. Virginia) with AES-256 encryption at rest and multi-AZ replication."}
+]
