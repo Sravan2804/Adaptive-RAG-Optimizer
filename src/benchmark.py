@@ -1,5 +1,4 @@
-import sys
-import os
+from typing import List, Dict, Any
 import pandas as pd
 
 try:
@@ -7,7 +6,7 @@ try:
 except ImportError:
     from src.pipeline import AdaptiveRAGEngine
 
-TEST_QUERIES = [
+TEST_QUERIES: List[str] = [
     "What is 25 * 48?",
     "Define idempotency in REST APIs.",
     "What is the EU cooling-off period for digital goods?",
@@ -16,9 +15,9 @@ TEST_QUERIES = [
     "List all refund conditions across US, EU, and Enterprise tiers."
 ]
 
-def run_benchmark():
+def run_benchmark() -> pd.DataFrame:
     engine = AdaptiveRAGEngine()
-    records = []
+    records: List[Dict[str, Any]] = []
 
     print("[INFO] Running comparative benchmarks across test queries...")
     for q in TEST_QUERIES:
@@ -45,6 +44,7 @@ def run_benchmark():
     print(df.to_string(index=False))
     print("="*80)
     print(f"Average Input Token Reduction: {df['token_saved_%'].mean():.1f}%\n")
+    return df
 
 if __name__ == "__main__":
     run_benchmark()

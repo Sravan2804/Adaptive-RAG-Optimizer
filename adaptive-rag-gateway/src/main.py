@@ -1,30 +1,34 @@
+import asyncio
+import threading
+from typing import Optional, Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
-import os
 
 try:
     from pipeline import AdaptiveRAGEngine, ACTION_MAP
 except ImportError:
     from src.pipeline import AdaptiveRAGEngine, ACTION_MAP
 
+engine: Optional[AdaptiveRAGEngine] = None
+_engine_lock = threading.Lock()
+
+def get_engine() -> Optional[AdaptiveRAGEngine]:
+    global engine
+    if engine is None:
+        with _engine_lock:
+            if engine is None:
+                try:
+                    engine = AdaptiveRAGEngine()
+                except Exception:
+                    engine = None
+                    return None
+    return engine
+
 app = FastAPI(
     title="Adaptive RAG Gateway API",
     description="Adaptive Retrieval-Augmented Generation routing gateway based on query complexity",
     version="1.0.0"
 )
-
-# Global engine instance
-engine: Optional[AdaptiveRAGEngine] = None
-
-@app.on_event("startup")
-def startup_event():
-    global engine
-    try:
-        engine = AdaptiveRAGEngine()
-        print("[INFO] Adaptive RAG Engine successfully initialized.")
-    except Exception as e:
-        print(f"[WARNING] Adaptive RAG Engine not initialized yet: {e}")
 
 class RouteRequest(BaseModel):
     query: str = Field(..., example="What is the EU cooling-off period for digital goods?")
@@ -35,7 +39,7 @@ class QueryRequest(BaseModel):
     static_k: int = Field(default=5, ge=0, le=20)
 
 @app.get("/health")
-def health():
+async def health():
     return {
         "status": "healthy",
         "engine_loaded": engine is not None,
@@ -43,16 +47,18 @@ def health():
     }
 
 @app.post("/route")
-def route_query_endpoint(req: RouteRequest):
-    if engine is None:
+async def route_query_endpoint(req: RouteRequest):
+    eng = await asyncio.to_thread(get_engine)
+    if eng is None:
         raise HTTPException(status_code=503, detail="Engine not initialized. Ensure models and vector store exist.")
-    return engine.route_query(req.query)
+    return await asyncio.to_thread(eng.route_query, req.query)
 
 @app.post("/query")
-def run_query_endpoint(req: QueryRequest):
-    if engine is None:
+async def run_query_endpoint(req: QueryRequest):
+    eng = await asyncio.to_thread(get_engine)
+    if eng is None:
         raise HTTPException(status_code=503, detail="Engine not initialized. Ensure models and vector store exist.")
-    return engine.run(query=req.query, mode=req.mode, static_k=req.static_k)
+    return await asyncio.to_thread(eng.run, query=req.query, mode=req.mode, static_k=req.static_k)
 
 if __name__ == "__main__":
     import uvicorn

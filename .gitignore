@@ -1,0 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Chroma vector database local files
+chroma_db/
+adaptive-rag-gateway/chroma_db/
+
+# Local overrides
+.env.local

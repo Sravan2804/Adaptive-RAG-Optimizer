@@ -1,36 +1,44 @@
 import json
 import os
+from pathlib import Path
 import chromadb
 from chromadb.utils import embedding_functions
 
-def get_paths():
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # Support running either from root or from src
-    if os.path.exists("data/knowledge_base.json"):
-        kb_path = "data/knowledge_base.json"
-        db_path = "./chroma_db"
-    else:
-        kb_path = os.path.join(base_dir, "data", "knowledge_base.json")
-        db_path = os.path.join(base_dir, "chroma_db")
-    return kb_path, db_path
+# Optimize HuggingFace Hub environment
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+def get_embedding_function():
+    try:
+        return embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+    except Exception:
+        from sklearn.feature_extraction.text import HashingVectorizer
+        class LocalFallbackEmbeddingFunction(embedding_functions.EmbeddingFunction):
+            def __init__(self, n_features: int = 384):
+                self.vectorizer = HashingVectorizer(n_features=n_features)
+            def __call__(self, input):
+                return self.vectorizer.transform(input).toarray().tolist()
+        return LocalFallbackEmbeddingFunction()
 
 def build_vector_store():
-    kb_path, db_path = get_paths()
-    os.makedirs(os.path.dirname(kb_path), exist_ok=True)
+    kb_path = Path("data/knowledge_base.json") if Path("data/knowledge_base.json").exists() else BASE_DIR / "data" / "knowledge_base.json"
+    db_path = Path("./chroma_db") if Path("data/knowledge_base.json").exists() else BASE_DIR / "chroma_db"
     
-    client = chromadb.PersistentClient(path=db_path)
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
+    if not kb_path.exists():
+        raise FileNotFoundError(f"Missing {kb_path} corpus file.")
+        
+    client = chromadb.PersistentClient(path=str(db_path))
+    ef = get_embedding_function()
     
     collection = client.get_or_create_collection(
         name="company_docs",
         embedding_function=ef
     )
     
-    if not os.path.exists(kb_path):
-        raise FileNotFoundError(f"Missing {kb_path} corpus file.")
-        
     with open(kb_path, "r", encoding="utf-8") as f:
         docs = json.load(f)
         

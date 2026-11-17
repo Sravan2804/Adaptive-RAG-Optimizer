@@ -1,5 +1,5 @@
-import os
 import time
+from pathlib import Path
 import joblib
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -7,21 +7,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
 
-def get_paths():
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if os.path.exists("data/router_dataset.csv"):
-        dataset_path = "data/router_dataset.csv"
-        model_dir = "models"
-        model_path = "models/query_router.joblib"
-    else:
-        dataset_path = os.path.join(base_dir, "data", "router_dataset.csv")
-        model_dir = os.path.join(base_dir, "models")
-        model_path = os.path.join(model_dir, "query_router.joblib")
-    return dataset_path, model_dir, model_path
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 def train():
-    dataset_path, model_dir, model_path = get_paths()
-    if not os.path.exists(dataset_path):
+    dataset_path = Path("data/router_dataset.csv") if Path("data/router_dataset.csv").exists() else BASE_DIR / "data" / "router_dataset.csv"
+    model_dir = Path("models") if Path("data/router_dataset.csv").exists() else BASE_DIR / "models"
+    model_path = model_dir / "query_router.joblib"
+
+    if not dataset_path.exists():
         raise FileNotFoundError(f"Missing training set at {dataset_path}")
         
     df = pd.read_csv(dataset_path)
@@ -37,7 +30,7 @@ def train():
     
     pipeline.fit(X, y)
     
-    os.makedirs(model_dir, exist_ok=True)
+    model_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, model_path)
     
     # Latency benchmarking check
