@@ -10,6 +10,9 @@ pinned: false
 
 # Adaptive RAG Optimizer & Gateway
 
+[![Live Demo](https://img.shields.io/badge/Demo-Live%20on%20Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://adaptive-rag-optimizer.onrender.com/)
+[![API Docs](https://img.shields.io/badge/API-Swagger%20Docs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://adaptive-rag-optimizer.onrender.com/docs)
+
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-1.0.0-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -17,6 +20,8 @@ pinned: false
 [![scikit--learn](https://img.shields.io/badge/scikit--learn-Router%20Classifier-F7931E?logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)](#)
+
+> **Live Deployment**: Access the live interactive gateway dashboard and real-time telemetry console at **[https://adaptive-rag-optimizer.onrender.com/](https://adaptive-rag-optimizer.onrender.com/)** (Interactive API Swagger Docs: **[https://adaptive-rag-optimizer.onrender.com/docs](https://adaptive-rag-optimizer.onrender.com/docs)**).
 
 An intelligent, latency-optimized Retrieval-Augmented Generation (RAG) backend engineered to dynamically allocate retrieval chunk budgets ($k \in \{0, 2, 6\}$) based on incoming query complexity, featuring a sub-0.05ms hybrid fast-path, stateless HashingVectorizer classification, real-time analytics, and a live interactive React playground.
 
