@@ -1,12 +1,3 @@
----
-title: Adaptive RAG Optimizer
-emoji: ⚡
-colorFrom: green
-colorTo: blue
-sdk: gradio
-app_file: app.py
-pinned: false
----
 
 # Adaptive RAG Optimizer & Gateway
 
