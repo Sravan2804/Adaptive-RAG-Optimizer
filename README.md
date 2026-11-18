@@ -1,3 +1,13 @@
+---
+title: Adaptive RAG Optimizer
+emoji: ⚡
+colorFrom: green
+colorTo: blue
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
 # Adaptive RAG Optimizer & Gateway
 
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
