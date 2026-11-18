@@ -159,6 +159,21 @@ def get_engine() -> Optional[AdaptiveRAGEngine]:
         try:
             engine = AdaptiveRAGEngine()
             return engine
+        except FileNotFoundError as fnf:
+            logger.warning("Vector store missing on startup (%s). Auto-running ingestion...", fnf)
+            try:
+                try:
+                    from ingest import build_vector_store
+                except ImportError:
+                    from src.ingest import build_vector_store
+                build_vector_store()
+                engine = AdaptiveRAGEngine()
+                return engine
+            except Exception as ingest_exc:
+                _retry_deadline = time.monotonic() + RETRY_COOLDOWN_SECONDS
+                engine = None
+                logger.error("Failed to auto-ingest knowledge base: %s", ingest_exc)
+                return None
         except Exception as exc:
             _retry_deadline = time.monotonic() + RETRY_COOLDOWN_SECONDS
             engine = None
