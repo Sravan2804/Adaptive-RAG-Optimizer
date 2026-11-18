@@ -2,7 +2,7 @@ import time
 from pathlib import Path
 import joblib
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
@@ -21,8 +21,10 @@ def train():
     df = pd.read_csv(dataset_path)
     X, y = df["query"], df["label"]
     
+    # HashingVectorizer (stateless, zero in-memory string vocabulary) + TfidfTransformer + LogisticRegression
     pipeline = Pipeline([
-        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=5000, sublinear_tf=True)),
+        ("hasher", HashingVectorizer(n_features=4096, alternate_sign=False, ngram_range=(1, 2))),
+        ("tfidf", TfidfTransformer(sublinear_tf=True)),
         ("clf", LogisticRegression(C=2.0, max_iter=1000))
     ])
     

@@ -1,10 +1,25 @@
 import os
+import re
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Fast-path regex patterns for sub-0.1ms deterministic routing (Tier 0: SKIP, k=0)
+FAST_PATH_PATTERNS = [
+    re.compile(r"^\s*(?:what\s+is\s+|calculate\s+|solve\s+)?[\d\s\+\-\*\/\^\(\)\.\%]+(?:\s*=\s*\?)?[\.\?]?$", re.IGNORECASE),
+    re.compile(r"^\s*(?:calculate|what\s+is)\s+\d+(?:\.\d+)?\s*(?:%|percent)\s+of\s+\d+(?:\.\d+)?[\.\?]?$", re.IGNORECASE),
+    re.compile(r"^\s*(?:what\s+is\s+|calculate\s+)?(?:the\s+)?square\s+root\s+of\s+\d+(?:\.\d+)?[\.\?]?$", re.IGNORECASE),
+    re.compile(r"^\s*what\s+is\s+\d+(?:\.\d+)?\s+(?:divided\s+by|multiplied\s+by|times|plus|minus)\s+\d+(?:\.\d+)?[\.\?]?$", re.IGNORECASE),
+    re.compile(r"^\s*(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\b[^\?]*[\.\?]?$", re.IGNORECASE),
+    re.compile(r"^\s*can\s+you\s+(?:help|assist)\s+me(?:\s+with\s+.*)?[\.\?]?$", re.IGNORECASE),
+]
+
+def check_fast_path(query: str) -> bool:
+    clean = query.strip()
+    return any(p.match(clean) for p in FAST_PATH_PATTERNS)
 
 # Load .env before setting defaults or importing Hugging Face / ChromaDB modules
 env_path = BASE_DIR / ".env"
@@ -197,6 +212,21 @@ class AdaptiveRAGEngine:
 
     def route_query(self, query: str) -> Dict[str, Any]:
         start = time.perf_counter()
+
+        # Tier 0: Sub-0.1ms Multi-Tiered Hybrid Fast-Path
+        if check_fast_path(query):
+            router_ms = (time.perf_counter() - start) * 1000
+            decision = ACTION_MAP[0]
+            return {
+                "class_id": 0,
+                "tier": decision["name"],
+                "k": decision["k"],
+                "tier_cost_usd": decision["tier_cost_usd"],
+                "confidence": 1.0,
+                "router_latency_ms": round(router_ms, 3),
+                "fast_path": True
+            }
+
         probs = self.router.predict_proba([query])[0]
         pred_class = int(probs.argmax())
         confidence = float(probs[pred_class])
@@ -213,7 +243,8 @@ class AdaptiveRAGEngine:
             "k": decision["k"],
             "tier_cost_usd": decision["tier_cost_usd"],
             "confidence": round(confidence, 3),
-            "router_latency_ms": round(router_ms, 2)
+            "router_latency_ms": round(router_ms, 2),
+            "fast_path": False
         }
 
     def run(self, query: str, mode: str = "adaptive", static_k: int = 5) -> Dict[str, Any]:
@@ -223,7 +254,7 @@ class AdaptiveRAGEngine:
             route_info = self.route_query(query)
             k = route_info["k"]
         else:
-            route_info = {"tier": "STATIC", "k": static_k, "router_latency_ms": 0.0, "tier_cost_usd": 0.005}
+            route_info = {"tier": "STATIC", "k": static_k, "router_latency_ms": 0.0, "tier_cost_usd": 0.005, "fast_path": False}
             k = static_k
 
         retrieval_start = time.perf_counter()
@@ -260,11 +291,14 @@ class AdaptiveRAGEngine:
         return {
             "mode": mode,
             "query": query,
+            "tier": route_info.get("tier", "NARROW"),
             "answer": answer,
             "k_used": k,
             "input_tokens": input_tokens,
             "router_ms": route_info["router_latency_ms"],
             "retrieval_ms": round(retrieval_ms, 2),
             "total_latency_ms": round(total_ms, 2),
-            "tier_cost_usd": route_info["tier_cost_usd"]
+            "tier_cost_usd": route_info["tier_cost_usd"],
+            "fast_path": route_info.get("fast_path", False),
+            "chunks": chunks
         }

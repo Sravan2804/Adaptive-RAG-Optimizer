@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adaptive RAG Optimizer — Interactive Playground & Analytics</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- React, ReactDOM, Babel Standalone -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const PRESETS = [
+      { label: "⚡ Arithmetic (SKIP, k=0)", query: "What is 25 * 48?", tier: "SKIP" },
+      { label: "💬 Greeting (Fast-Path)", query: "Hello, can you assist me with some questions?", tier: "SKIP" },
+      { label: "🔍 Factual Lookup (NARROW, k=2)", query: "What is the EU cooling-off period for digital goods?", tier: "NARROW" },
+      { label: "📊 Complex Multi-Hop (DEEP, k=6)", query: "Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened.", tier: "DEEP" }
+    ];
+
+    function App() {
+      const [query, setQuery] = useState("What is the EU cooling-off period for digital goods?");
+      const [mode, setMode] = useState("adaptive");
+      const [staticK, setStaticK] = useState(5);
+      const [loading, setLoading] = useState(false);
+      const [result, setResult] = useState(null);
+      const [health, setHealth] = useState(null);
+      const [analytics, setAnalytics] = useState(null);
+      const [error, setError] = useState(null);
+
+      // Fetch health & analytics
+      const refreshStatus = async () => {
+        try {
+          const hRes = await fetch("/health");
+          if (hRes.ok) setHealth(await hRes.json());
+          const aRes = await fetch("/analytics");
+          if (aRes.ok) setAnalytics(await aRes.json());
+        } catch (e) {
+          console.error("Status fetch failed:", e);
+        }
+      };
+
+      useEffect(() => {
+        refreshStatus();
+        const interval = setInterval(refreshStatus, 4000);
+        return () => clearInterval(interval);
+      }, []);
+
+      const handleRunQuery = async () => {
+        if (!query.trim()) return;
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await fetch("/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query, mode, static_k: Number(staticK) })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Query execution failed");
+          }
+          const data = await res.json();
+          setResult(data);
+          refreshStatus();
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const getTierColor = (tier) => {
+        if (tier === "SKIP") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+        if (tier === "NARROW") return "bg-sky-500/20 text-sky-400 border-sky-500/30";
+        if (tier === "DEEP") return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+        return "bg-slate-700 text-slate-300 border-slate-600";
+      };
+
+      return (
+        <div class="max-w-7xl mx-auto px-4 py-8">
+          {/* Header */}
+          <header class="flex flex-col md:flex-row md:items-center justify-between pb-8 mb-8 border-b border-slate-800 gap-4">
+            <div>
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center font-bold text-slate-950 text-xl shadow-lg shadow-emerald-500/20">
+                  ⚡
+                </div>
+                <div>
+                  <h1 class="text-2xl font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                    Adaptive RAG Optimizer
+                  </h1>
+                  <p class="text-xs text-slate-400">Dynamic Chunk Budget Routing ($k \in \{0, 2, 6\}$) with Hybrid Fast-Path</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs">
+                <span class={`w-2.5 h-2.5 rounded-full ${health?.status === 'healthy' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                <span class="text-slate-300">{health?.engine_loaded ? "Engine Ready" : "Initializing..."}</span>
+              </div>
+              <a href="/docs" target="_blank" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 transition">
+                API Docs ↗
+              </a>
+            </div>
+          </header>
+
+          {/* KPI Analytics Cards */}
+          <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="glass-card p-5 rounded-2xl">
+              <div class="text-xs font-medium text-slate-400">Total Queries</div>
+              <div class="text-2xl font-bold text-white mt-1">{analytics?.total_queries ?? 0}</div>
+              <div class="text-[11px] text-emerald-400 mt-1">
+                ⚡ {analytics?.fast_path_hits ?? 0} fast-path hits ({analytics?.fast_path_ratio_pct ?? 0}%)
+              </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl">
+              <div class="text-xs font-medium text-slate-400">Tokens Saved</div>
+              <div class="text-2xl font-bold text-emerald-400 mt-1">
+                {analytics?.token_metrics?.token_savings_pct ?? 0}%
+              </div>
+              <div class="text-[11px] text-slate-400 mt-1">
+                {analytics?.token_metrics?.total_tokens_saved?.toLocaleString() ?? 0} tokens reduced
+              </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl">
+              <div class="text-xs font-medium text-slate-400">Est. USD Saved</div>
+              <div class="text-2xl font-bold text-cyan-400 mt-1">
+                ${analytics?.cost_metrics_usd?.estimated_usd_saved?.toFixed(4) ?? "0.0000"}
+              </div>
+              <div class="text-[11px] text-slate-400 mt-1">
+                Cost reduction: {analytics?.cost_metrics_usd?.cost_savings_pct ?? 0}%
+              </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl">
+              <div class="text-xs font-medium text-slate-400">Avg. Router Overhead</div>
+              <div class="text-2xl font-bold text-purple-400 mt-1">
+                {analytics?.performance_ms?.avg_router_latency_ms ?? 0} ms
+              </div>
+              <div class="text-[11px] text-slate-400 mt-1">
+                Total avg latency: {analytics?.performance_ms?.avg_total_latency_ms ?? 0} ms
+              </div>
+            </div>
+          </section>
+
+          {/* Main Grid: Playground & Live Result */}
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+            {/* Left: Input Playground */}
+            <div class="lg:col-span-6 flex flex-col gap-6">
+              <div class="glass-card p-6 rounded-2xl">
+                <h2 class="text-lg font-semibold text-white mb-3">Query Playground</h2>
+                
+                {/* Presets */}
+                <div class="mb-4">
+                  <span class="text-xs text-slate-400 mb-2 block">Quick Test Presets:</span>
+                  <div class="flex flex-wrap gap-2">
+                    {PRESETS.map((p, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setQuery(p.query)}
+                        class="px-2.5 py-1 text-xs rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 transition"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Input Textarea */}
+                <div class="mb-4">
+                  <label class="text-xs text-slate-400 mb-1.5 block">User Query</label>
+                  <textarea
+                    rows="3"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Enter query to test adaptive routing..."
+                    class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                </div>
+
+                {/* Configuration controls */}
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label class="text-xs text-slate-400 mb-1.5 block">Routing Mode</label>
+                    <select
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value)}
+                      class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none"
+                    >
+                      <option value="adaptive">Adaptive RAG (k in 0, 2, 6)</option>
+                      <option value="static">Static Baseline (Fixed k)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-400 mb-1.5 block">Static k (for baseline)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="20"
+                      value={staticK}
+                      onChange={(e) => setStaticK(e.target.value)}
+                      disabled={mode === "adaptive"}
+                      class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none disabled:opacity-40"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleRunQuery}
+                  disabled={loading}
+                  class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 font-semibold text-slate-950 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <div class="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                      Routing & Retrieving...
+                    </>
+                  ) : (
+                    <>Run Query</>
+                  )}
+                </button>
+
+                {error && (
+                  <div class="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+                    {error}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Live Result Card */}
+            <div class="lg:col-span-6 flex flex-col gap-6">
+              <div class="glass-card p-6 rounded-2xl flex-1 flex flex-col">
+                <h2 class="text-lg font-semibold text-white mb-4">Execution Results</h2>
+
+                {result ? (
+                  <div class="flex flex-col gap-4">
+                    {/* Tier & Latency Bar */}
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                      <div class="flex items-center gap-2">
+                        <span class={`px-3 py-1 rounded-lg text-xs font-bold border ${getTierColor(result.tier)}`}>
+                          {result.tier} (k={result.k_used})
+                        </span>
+                        {result.fast_path && (
+                          <span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold">
+                            ⚡ Fast-Path
+                          </span>
+                        )}
+                      </div>
+                      <div class="text-right">
+                        <span class="text-xs text-slate-400">Total Latency: </span>
+                        <span class="text-xs font-semibold text-white">{result.total_latency_ms} ms</span>
+                      </div>
+                    </div>
+
+                    {/* Latency Waterfall Breakdown */}
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800/80">
+                        <div class="text-[10px] text-slate-400">Router Latency</div>
+                        <div class="font-bold text-slate-200 mt-0.5">{result.router_ms} ms</div>
+                      </div>
+                      <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800/80">
+                        <div class="text-[10px] text-slate-400">Retrieval Latency</div>
+                        <div class="font-bold text-slate-200 mt-0.5">{result.retrieval_ms} ms</div>
+                      </div>
+                      <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800/80">
+                        <div class="text-[10px] text-slate-400">Input Tokens</div>
+                        <div class="font-bold text-emerald-400 mt-0.5">{result.input_tokens} tok</div>
+                      </div>
+                    </div>
+
+                    {/* Synthesized Answer */}
+                    <div>
+                      <span class="text-xs text-slate-400 mb-1.5 block font-medium">Synthesized Response:</span>
+                      <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 leading-relaxed font-mono">
+                        {result.answer}
+                      </div>
+                    </div>
+
+                    {/* Context Chunks Accordion */}
+                    {result.chunks && result.chunks.length > 0 && (
+                      <div>
+                        <span class="text-xs text-slate-400 mb-1.5 block font-medium">
+                          Retrieved Context Chunks ({result.chunks.length}):
+                        </span>
+                        <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {result.chunks.map((c, i) => (
+                            <div key={i} class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
+                              <span class="text-emerald-400 font-semibold mr-1.5">Chunk #{i+1}:</span>
+                              {c}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div class="flex-1 flex flex-col items-center justify-center text-slate-500 text-center py-12">
+                    <div class="text-4xl mb-3">🎯</div>
+                    <p class="text-sm">Select a query preset or enter a custom prompt and click "Run Query" to see live routing in action.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Queries Table */}
+          {analytics?.recent_queries && analytics.recent_queries.length > 0 && (
+            <section class="glass-card p-6 rounded-2xl">
+              <h3 class="text-base font-semibold text-white mb-4">Live Activity Stream (Last 15 Queries)</h3>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th class="pb-2.5">Time</th>
+                      <th class="pb-2.5">Query</th>
+                      <th class="pb-2.5">Tier</th>
+                      <th class="pb-2.5">k</th>
+                      <th class="pb-2.5">Tokens</th>
+                      <th class="pb-2.5">Latency</th>
+                      <th class="pb-2.5">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800/60">
+                    {analytics.recent_queries.map((q, idx) => (
+                      <tr key={idx} class="hover:bg-slate-800/30 transition">
+                        <td class="py-2.5 text-slate-400 font-mono text-[11px]">{q.timestamp}</td>
+                        <td class="py-2.5 text-slate-200 max-w-xs truncate">{q.query}</td>
+                        <td class="py-2.5">
+                          <span class={`px-2 py-0.5 rounded text-[10px] font-bold border ${getTierColor(q.tier)}`}>
+                            {q.tier}
+                          </span>
+                        </td>
+                        <td class="py-2.5 text-slate-300 font-mono">{q.k_used}</td>
+                        <td class="py-2.5 text-emerald-400 font-mono">{q.tokens}</td>
+                        <td class="py-2.5 text-slate-300 font-mono">{q.latency_ms} ms</td>
+                        <td class="py-2.5">
+                          {q.fast_path ? (
+                            <span class="text-amber-400 text-[10px] font-semibold">⚡ Fast-Path</span>
+                          ) : (
+                            <span class="text-slate-400 text-[10px]">ML Router</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
