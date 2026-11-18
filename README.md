@@ -17,7 +17,7 @@ Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g
 
 ### The Inefficiencies of Static RAG:
 
-1. **Unnecessary Token Bloat**: Closed-book questions (_"What is 25 _ 48?"\*) do not require external context. Ingesting $k=5$ chunks into the prompt inflates token consumption by up to **80%+**.
+1. **Unnecessary Token Bloat**: Closed-book questions ("What is 25 * 48?") do not require external context. Ingesting $k=5$ chunks into the prompt inflates token consumption by up to **80%**.
 2. **Context Poisoning & Latency Penalties**: Irrelevant context chunks add unnecessary vector search latency and can distract the LLM generator.
 3. **Under-Retrieval on Complex Queries**: Complex multi-hop queries often need deeper retrieval than a shallow static $k$ can supply.
 
