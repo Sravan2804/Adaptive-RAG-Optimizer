@@ -62,7 +62,15 @@ else:
                             imported_entries.append((bound, qual, diag))
                 elif isinstance(node, (ast.If, ast.Try, ast.With, ast.For, ast.While)):
                     sub_nodes = list(ast.iter_child_nodes(node))
-                    collect_module_imports([n for n in sub_nodes if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))])
+                    # For Try, also descend into ExceptHandler bodies (which are not in iter_child_nodes' flat list)
+                    handler_bodies = []
+                    if isinstance(node, ast.Try):
+                        for h in node.handlers:
+                            handler_bodies.extend(h.body)
+                    collect_module_imports(
+                        [n for n in sub_nodes if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+                        + [n for n in handler_bodies if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+                    )
 
         collect_module_imports(tree.body)
 

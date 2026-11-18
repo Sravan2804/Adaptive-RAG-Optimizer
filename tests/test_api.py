@@ -248,6 +248,18 @@ async def run_all_tests():
 
 def test_api():
     """Discoverable test wrapper running offline integration test in a clean subprocess with PYTHONPATH."""
+    # G.3: Skip gracefully on a fresh checkout without required artifacts
+    import pytest
+    missing = []
+    if not (PROJECT_ROOT / "models" / "query_router.joblib").exists():
+        missing.append("models/query_router.joblib")
+    if not (PROJECT_ROOT / "chroma_db" / "chroma.sqlite3").exists():
+        missing.append("chroma_db/chroma.sqlite3")
+    if missing:
+        pytest.skip(
+            f"Required artifacts not present — run ingest.py and train_router.py first. Missing: {', '.join(missing)}"
+        )
+
     env = os.environ.copy()
     env["HF_HUB_OFFLINE"] = "1"
     env["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -257,7 +269,12 @@ def test_api():
     env["PYTHONPATH"] = python_path
 
     cmd = [sys.executable, str(Path(__file__).resolve()), "--direct"]
-    res = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    try:
+        res = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(
+            f"Subprocess integration test timed out after 300s.\nstdout: {e.stdout}\nstderr: {e.stderr}"
+        )
     if res.returncode != 0:
         print(res.stdout)
         print(res.stderr, file=sys.stderr)

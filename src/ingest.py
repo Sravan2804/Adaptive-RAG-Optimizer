@@ -95,6 +95,19 @@ def build_vector_store(db_path: Optional[str] = None, kb_path: Optional[str] = N
         metadata={"embedding_backend": backend_name, "status": "building"}
     )
     collection.upsert(ids=ids, documents=documents)
+    # B.4: Remove stale documents (IDs present in DB but not in incoming corpus)
+    existing_ids = collection.get(include=[])["ids"]
+    stale_ids = list(set(existing_ids) - set(ids))
+    if stale_ids:
+        collection.delete(ids=stale_ids)
+        print(f"[INFO] Removed {len(stale_ids)} stale document(s) from '{target_collection_name}'.")
+    # Verify count matches before marking ready
+    actual_count = collection.count()
+    if actual_count != len(ids):
+        raise RuntimeError(
+            f"Ingestion verification failed for '{target_collection_name}': "
+            f"expected {len(ids)} documents, found {actual_count}. Leaving status='building' for retry."
+        )
     collection.modify(metadata={
         "embedding_backend": backend_name,
         "corpus_revision": corpus_rev,
@@ -104,20 +117,31 @@ def build_vector_store(db_path: Optional[str] = None, kb_path: Optional[str] = N
 
     # If primary backend succeeded, also build/upsert the fallback collection so offline/un-cached environments have a ready fallback index
     if backend_name != BACKEND_FALLBACK:
-        fallback_ef, fallback_backend = get_embedding_function(force_fallback=True)
-        fallback_col = client.get_or_create_collection(
-            name="company_docs_fallback",
-            embedding_function=fallback_ef,
-            metadata={"embedding_backend": fallback_backend, "status": "building"}
-        )
-        # Upsert documents BEFORE marking active/ready so it remains inactive until completed
-        fallback_col.upsert(ids=ids, documents=documents)
-        fallback_col.modify(metadata={
-            "embedding_backend": fallback_backend,
-            "corpus_revision": corpus_rev,
-            "status": "ready"
-        })
-        print(f"[SUCCESS] Ingested {len(docs)} documents into fallback collection 'company_docs_fallback' ({fallback_backend}, rev:{corpus_rev}).")
+        try:
+            fallback_ef, fallback_backend = get_embedding_function(force_fallback=True)
+            fallback_col = client.get_or_create_collection(
+                name="company_docs_fallback",
+                embedding_function=fallback_ef,
+                metadata={"embedding_backend": fallback_backend, "status": "building"}
+            )
+            # B.3: Validate backend tag before upserting into fallback collection
+            fb_stored_backend = (fallback_col.metadata or {}).get("embedding_backend")
+            if fb_stored_backend is not None and fb_stored_backend != fallback_backend:
+                print(f"[WARNING] Fallback collection 'company_docs_fallback' has incompatible backend '{fb_stored_backend}'. Skipping fallback upsert.")
+            else:
+                # Upsert documents BEFORE marking active/ready so it remains inactive until completed
+                fallback_col.upsert(ids=ids, documents=documents)
+                stale_fallback_ids = list(set(fallback_col.get(include=[])["ids"]) - set(ids))
+                if stale_fallback_ids:
+                    fallback_col.delete(ids=stale_fallback_ids)
+                fallback_col.modify(metadata={
+                    "embedding_backend": fallback_backend,
+                    "corpus_revision": corpus_rev,
+                    "status": "ready"
+                })
+                print(f"[SUCCESS] Ingested {len(docs)} documents into fallback collection 'company_docs_fallback' ({fallback_backend}, rev:{corpus_rev}).")
+        except Exception as exc:
+            print(f"[WARNING] Fallback collection upsert failed (non-fatal): {exc}")
 
 if __name__ == "__main__":
     build_vector_store()

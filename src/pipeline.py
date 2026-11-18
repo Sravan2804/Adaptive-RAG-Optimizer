@@ -98,17 +98,33 @@ class AdaptiveRAGEngine:
         minilm_col_name = f"company_docs_{BACKEND_MINILM.replace('/', '_').replace('-', '_')}"
 
         # Discover candidates
+        # C.1: Validate MiniLM tag when found under the named collection
         minilm_candidate_name = None
         if minilm_col_name in col_metadata:
-            minilm_candidate_name = minilm_col_name
-        elif "company_docs" in col_metadata:
+            if col_metadata[minilm_col_name].get("embedding_backend") == BACKEND_MINILM:
+                minilm_candidate_name = minilm_col_name
+            # else: named collection has wrong backend tag — skip it
+        if minilm_candidate_name is None and "company_docs" in col_metadata:
             if col_metadata["company_docs"].get("embedding_backend") == BACKEND_MINILM:
                 minilm_candidate_name = "company_docs"
 
+        # C.2: Only accept company_docs_fallback as hashing candidate when status=="ready"
+        hashing_conflict_reason = None
         hashing_candidate_name = None
         if "company_docs_fallback" in col_metadata:
-            hashing_candidate_name = "company_docs_fallback"
-        elif "company_docs" in col_metadata:
+            fb_meta = col_metadata["company_docs_fallback"]
+            fb_backend = fb_meta.get("embedding_backend")
+            fb_status = fb_meta.get("status", "ready")
+            if fb_backend is not None and fb_backend != BACKEND_FALLBACK:
+                # C.3: Incompatible backend — skip instead of raise, record reason
+                hashing_conflict_reason = (
+                    f"Collection 'company_docs_fallback' has incompatible backend '{fb_backend}', "
+                    f"expected '{BACKEND_FALLBACK}'. Run ingest.py to rebuild."
+                )
+            elif fb_status == "ready":
+                hashing_candidate_name = "company_docs_fallback"
+            # else status=="building" — skip; check company_docs below
+        if hashing_candidate_name is None and "company_docs" in col_metadata:
             if col_metadata["company_docs"].get("embedding_backend") == BACKEND_FALLBACK:
                 hashing_candidate_name = "company_docs"
 
@@ -117,26 +133,18 @@ class AdaptiveRAGEngine:
             if col_metadata["company_docs"].get("embedding_backend") is None:
                 legacy_candidate_name = "company_docs"
 
-        # Reject non-hashing fallback collection
-        if hashing_candidate_name == "company_docs_fallback":
-            fb_backend = col_metadata["company_docs_fallback"].get("embedding_backend")
-            if fb_backend is not None and fb_backend != BACKEND_FALLBACK:
-                raise ValueError(
-                    f"Collection 'company_docs_fallback' has incompatible backend '{fb_backend}', expected '{BACKEND_FALLBACK}'."
-                )
-
         # Track completed corpus revision
         minilm_rev = col_metadata.get(minilm_candidate_name, {}).get("corpus_revision") if minilm_candidate_name else None
         hashing_rev = col_metadata.get(hashing_candidate_name, {}).get("corpus_revision") if hashing_candidate_name else None
 
         minilm_is_ready = col_metadata.get(minilm_candidate_name, {}).get("status", "ready") == "ready" if minilm_candidate_name else False
-        hashing_is_ready = col_metadata.get(hashing_candidate_name, {}).get("status", "ready") == "ready" if hashing_candidate_name else False
+        hashing_is_ready = hashing_candidate_name is not None  # already filtered by status above
 
         selected_col_name = None
         selected_ef = None
 
-        # Prefer MiniLM if available, ready, and its revision is current
-        if minilm_candidate_name and minilm_is_ready and (hashing_rev is None or minilm_rev == hashing_rev or minilm_rev is not None):
+        # C.4: Prefer MiniLM if available, ready, and its revision matches hashing_rev (or no hashing index)
+        if minilm_candidate_name and minilm_is_ready and (hashing_rev is None or minilm_rev == hashing_rev):
             try:
                 ef, b_id = get_embedding_function(force_fallback=False)
                 if b_id == BACKEND_MINILM:
@@ -145,23 +153,29 @@ class AdaptiveRAGEngine:
             except Exception:
                 selected_col_name = None
 
-        # Fallback to hashing index if MiniLM cannot load or hashing has the current revision
+        # Fallback to hashing index if MiniLM cannot load
         if selected_col_name is None and hashing_candidate_name and hashing_is_ready:
             ef, _ = get_embedding_function(force_fallback=True)
             selected_col_name = hashing_candidate_name
             selected_ef = ef
 
-        # Legacy candidate if no backend-tagged collections exist
+        # C.5: Legacy untagged collection: require MiniLM; do NOT fall back to hashing for untagged index
         if selected_col_name is None and legacy_candidate_name:
             try:
-                ef, _ = get_embedding_function(force_fallback=False)
+                ef, b_id = get_embedding_function(force_fallback=False)
+                if b_id == BACKEND_MINILM:
+                    selected_col_name = legacy_candidate_name
+                    selected_ef = ef
+                else:
+                    legacy_candidate_name = None  # hashing backend for untagged collection is unsafe
             except Exception:
-                ef, _ = get_embedding_function(force_fallback=True)
-            selected_col_name = legacy_candidate_name
-            selected_ef = ef
+                legacy_candidate_name = None
 
         if selected_col_name is None:
-            raise FileNotFoundError(f"No usable document collections found in ChromaDB at {target_db}.")
+            detail = hashing_conflict_reason or "Run ingest.py to create the vector store."
+            raise FileNotFoundError(
+                f"No usable document collections found in ChromaDB at {target_db}. {detail}"
+            )
 
         self.ef = selected_ef
         self.collection_name = selected_col_name
