@@ -12,7 +12,7 @@ An intelligent, latency-optimized Retrieval-Augmented Generation (RAG) backend e
 
 ---
 
-## 📖 Executive Summary
+## Executive Summary
 
 Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g., $k=5$) regardless of whether a user is asking an arithmetic question, requesting a single policy date, or seeking an exhaustive multi-quarter financial synthesis.
 
@@ -34,7 +34,7 @@ Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g
 
 ---
 
-## 🧠 Classifier Selection & Architecture Deep-Dive
+## Classifier Selection & Architecture Deep-Dive
 
 ### What Classifier Did We Use and Why?
 
@@ -70,7 +70,7 @@ Before executing vectorization and classifier inference, queries pass through pr
 
 ---
 
-## 🏗️ Architecture & Query Lifecycle
+## Architecture & Query Lifecycle
 
 ```mermaid
 flowchart TD
@@ -116,7 +116,7 @@ flowchart TD
 
 ---
 
-## 💻 Live Interactive Playground Dashboard
+## Interactive Playground Dashboard
 
 The project includes a self-contained, offline-ready single-page dashboard served directly by FastAPI at **`http://localhost:8000/dashboard`** (or `/`):
 
@@ -129,7 +129,7 @@ The project includes a self-contained, offline-ready single-page dashboard serve
 
 ---
 
-## 📊 Action Tiers & Cost Model
+## Action Tiers & Cost Model
 
 | Tier         | Class ID | Chunk Budget ($k$) | Intended Query Complexity              | Avg. Input Tokens | Tier Cost (USD) | Example Query                                                                      |
 | ------------ | :------: | :----------------: | -------------------------------------- | :---------------: | :-------------: | ---------------------------------------------------------------------------------- |
@@ -139,7 +139,7 @@ The project includes a self-contained, offline-ready single-page dashboard serve
 
 ---
 
-## 📈 Empirical Benchmark Results
+## Empirical Benchmark Results
 
 Running `src/benchmark.py` directly compares **Adaptive RAG** against a conventional **Static ($k=5$) baseline**:
 
@@ -163,7 +163,7 @@ Average Input Token Reduction: 38.7%
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 Adaptive-RAG-Optimizer/
@@ -195,7 +195,7 @@ Adaptive-RAG-Optimizer/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Prerequisites & Environment Setup
 
@@ -232,7 +232,7 @@ HF_HUB_DISABLE_SYMLINKS_WARNING=1
 
 ---
 
-## 🛠️ Execution Guide
+## Execution Guide
 
 ### Step 1: Train the Complexity Router
 
@@ -281,7 +281,7 @@ python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
-## 🔌 API Reference
+## API Reference
 
 ### 1. Real-Time Analytics Endpoint
 
@@ -373,7 +373,7 @@ curl -X POST http://127.0.0.1:8000/query \
 
 ---
 
-## 🛡️ Reliability & Resilience Engineering
+## Reliability & Resilience Engineering
 
 1. **Deterministic Fast-Path**: Handles arithmetic, mathematical queries, and greetings in $0.018\text{ ms}$, entirely skipping both the ML router and ChromaDB.
 2. **Stateless HashingVectorizer**: Replaced in-memory dictionary lookups with fixed 4,096 MurmurHash3 feature buckets.
@@ -384,6 +384,6 @@ curl -X POST http://127.0.0.1:8000/query \
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).
