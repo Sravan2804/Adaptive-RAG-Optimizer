@@ -26,6 +26,7 @@ class AnalyticsTracker:
     def __init__(self):
         self._lock = threading.Lock()
         self.total_queries = 0
+        self.total_query_requests = 0
         self.tier_counts = {0: 0, 1: 0, 2: 0}
         self.fast_path_hits = 0
         self.total_tokens_used = 0
@@ -49,17 +50,30 @@ class AnalyticsTracker:
     def record_query(self, res: dict):
         with self._lock:
             self.total_queries += 1
+            self.total_query_requests += 1
             mode = res.get("mode", "adaptive")
             k_used = res.get("k_used", 0)
-            cid = 0 if k_used == 0 else (1 if k_used <= 2 else 2)
-            self.tier_counts[cid] = self.tier_counts.get(cid, 0) + 1
+
+            # Only record into adaptive tier distribution if not static mode
+            if mode == "adaptive":
+                cid = 0 if k_used == 0 else (1 if k_used <= 2 else 2)
+                self.tier_counts[cid] = self.tier_counts.get(cid, 0) + 1
+
             if res.get("fast_path"):
                 self.fast_path_hits += 1
 
             tokens = res.get("input_tokens", 0)
             self.total_tokens_used += tokens
-            # Static baseline is ~165 tokens for k=5
-            static_tokens = 165 if k_used == 0 else int(tokens * 1.5 if k_used == 2 else tokens * 0.9)
+
+            # If request is reference static k=5 configuration, contribute measured tokens unchanged
+            if mode == "static" and k_used == 5:
+                static_tokens = tokens
+            elif k_used == 0:
+                static_tokens = 165
+            elif k_used == 2:
+                static_tokens = int(tokens * 1.5)
+            else:
+                static_tokens = int(tokens * 0.9)
             self.total_static_tokens += static_tokens
 
             cost = res.get("tier_cost_usd", 0.002)
@@ -70,9 +84,9 @@ class AnalyticsTracker:
             self.total_retrieval_ms += res.get("retrieval_ms", 0.0)
             self.total_latency_ms += res.get("total_latency_ms", 0.0)
 
+            # Store execution metadata without exposing raw query prompts in shared view
             item = {
                 "timestamp": time.strftime("%H:%M:%S"),
-                "query": res.get("query", ""),
                 "mode": mode,
                 "tier": res.get("tier", "NARROW"),
                 "k_used": k_used,
@@ -87,18 +101,21 @@ class AnalyticsTracker:
     def get_snapshot(self) -> dict:
         with self._lock:
             t_queries = max(1, self.total_queries)
+            t_full_queries = max(1, self.total_query_requests)
+            adaptive_total = max(1, sum(self.tier_counts.values()))
             saved_tokens = max(0, self.total_static_tokens - self.total_tokens_used)
             saved_tokens_pct = round((saved_tokens / max(1, self.total_static_tokens)) * 100, 1) if self.total_static_tokens > 0 else 0.0
             saved_usd = max(0.0, self.total_static_usd_cost - self.total_usd_cost)
 
             return {
                 "total_queries": self.total_queries,
+                "total_query_requests": self.total_query_requests,
                 "fast_path_hits": self.fast_path_hits,
                 "fast_path_ratio_pct": round((self.fast_path_hits / t_queries) * 100, 1) if self.total_queries > 0 else 0.0,
                 "tier_distribution": {
-                    "SKIP": {"count": self.tier_counts.get(0, 0), "pct": round((self.tier_counts.get(0, 0) / t_queries) * 100, 1)},
-                    "NARROW": {"count": self.tier_counts.get(1, 0), "pct": round((self.tier_counts.get(1, 0) / t_queries) * 100, 1)},
-                    "DEEP": {"count": self.tier_counts.get(2, 0), "pct": round((self.tier_counts.get(2, 0) / t_queries) * 100, 1)}
+                    "SKIP": {"count": self.tier_counts.get(0, 0), "pct": round((self.tier_counts.get(0, 0) / adaptive_total) * 100, 1)},
+                    "NARROW": {"count": self.tier_counts.get(1, 0), "pct": round((self.tier_counts.get(1, 0) / adaptive_total) * 100, 1)},
+                    "DEEP": {"count": self.tier_counts.get(2, 0), "pct": round((self.tier_counts.get(2, 0) / adaptive_total) * 100, 1)}
                 },
                 "token_metrics": {
                     "total_tokens_used": self.total_tokens_used,
@@ -114,8 +131,8 @@ class AnalyticsTracker:
                 },
                 "performance_ms": {
                     "avg_router_latency_ms": round(self.total_router_ms / t_queries, 2),
-                    "avg_retrieval_latency_ms": round(self.total_retrieval_ms / t_queries, 2),
-                    "avg_total_latency_ms": round(self.total_latency_ms / t_queries, 2)
+                    "avg_retrieval_latency_ms": round(self.total_retrieval_ms / t_full_queries, 2) if self.total_query_requests > 0 else 0.0,
+                    "avg_total_latency_ms": round(self.total_latency_ms / t_full_queries, 2) if self.total_query_requests > 0 else 0.0
                 },
                 "recent_queries": self.query_history[:15]
             }
@@ -165,9 +182,10 @@ class QueryRequest(BaseModel):
 @app.get("/")
 @app.get("/dashboard")
 async def dashboard():
-    if STATIC_INDEX.exists():
-        return FileResponse(str(STATIC_INDEX), media_type="text/html")
-    return HTMLResponse("<h2>Adaptive RAG Optimizer Dashboard</h2><p>Static index not found.</p>")
+    target = STATIC_INDEX if STATIC_INDEX.exists() else Path("src/static/index.html")
+    if target.exists():
+        return FileResponse(str(target.resolve()), media_type="text/html")
+    return HTMLResponse("<h2>Adaptive RAG Optimizer Dashboard</h2><p>Static index not found.</p>", status_code=404)
 
 @app.get("/health")
 async def health():

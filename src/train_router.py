@@ -21,9 +21,9 @@ def train():
     df = pd.read_csv(dataset_path)
     X, y = df["query"], df["label"]
     
-    # HashingVectorizer (stateless, zero in-memory string vocabulary) + TfidfTransformer + LogisticRegression
+    # HashingVectorizer (stateless, zero in-memory string vocabulary) with norm=None so TfidfTransformer receives raw counts
     pipeline = Pipeline([
-        ("hasher", HashingVectorizer(n_features=4096, alternate_sign=False, ngram_range=(1, 2))),
+        ("hasher", HashingVectorizer(n_features=4096, alternate_sign=False, ngram_range=(1, 2), norm=None)),
         ("tfidf", TfidfTransformer(sublinear_tf=True)),
         ("clf", LogisticRegression(C=2.0, max_iter=1000))
     ])

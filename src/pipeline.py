@@ -13,8 +13,10 @@ FAST_PATH_PATTERNS = [
     re.compile(r"^\s*(?:calculate|what\s+is)\s+\d+(?:\.\d+)?\s*(?:%|percent)\s+of\s+\d+(?:\.\d+)?[\.\?]?$", re.IGNORECASE),
     re.compile(r"^\s*(?:what\s+is\s+|calculate\s+)?(?:the\s+)?square\s+root\s+of\s+\d+(?:\.\d+)?[\.\?]?$", re.IGNORECASE),
     re.compile(r"^\s*what\s+is\s+\d+(?:\.\d+)?\s+(?:divided\s+by|multiplied\s+by|times|plus|minus)\s+\d+(?:\.\d+)?[\.\?]?$", re.IGNORECASE),
-    re.compile(r"^\s*(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\b[^\?]*[\.\?]?$", re.IGNORECASE),
-    re.compile(r"^\s*can\s+you\s+(?:help|assist)\s+me(?:\s+with\s+.*)?[\.\?]?$", re.IGNORECASE),
+    # 2. Standalone conversational greetings or pleasantries (excluding questions with substantive follow-ups)
+    re.compile(r"^\s*(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))(?:\s+(?:there|everyone|all|team|how\s+are\s+you))?[\s.!?]*$", re.IGNORECASE),
+    # 3. Generic closed-book pleasantries / help offers (excluding requests that name a specific topic)
+    re.compile(r"^\s*(?:(?:hello|hi|hey)[,\s]+)?can\s+you\s+(?:help|assist)\s+me(?:\s+please|\s+with\s+(?:some\s+|a\s+)?questions?)?[\s.!?]*$", re.IGNORECASE),
 ]
 
 def check_fast_path(query: str) -> bool:

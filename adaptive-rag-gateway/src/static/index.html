@@ -1,395 +1,621 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Adaptive RAG Optimizer — Interactive Playground & Analytics</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#f0fdf4',
-              500: '#10b981',
-              600: '#059669',
-              900: '#064e3b',
-            }
-          }
-        }
-      }
-    }
-  </script>
-  <!-- React, ReactDOM, Babel Standalone -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    body { font-family: 'Inter', sans-serif; }
-    .glass-card {
-      background: rgba(17, 24, 39, 0.75);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+    :root {
+      --bg-primary: #020617;
+      --bg-card: rgba(15, 23, 42, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(16, 185, 129, 0.3);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --color-emerald: #10b981;
+      --color-sky: #38bdf8;
+      --color-purple: #c084fc;
+      --color-amber: #f59e0b;
+      --color-red: #ef4444;
     }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      padding: 1.5rem 1rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      padding-bottom: 1.5rem; margin-bottom: 2rem; border-bottom: 1px solid #1e293b; gap: 1rem;
+    }
+    .brand-group { display: flex; align-items: center; gap: 0.75rem; }
+    .brand-icon {
+      width: 2.5rem; height: 2.5rem; border-radius: 0.75rem;
+      background: linear-gradient(135deg, #10b981, #06b6d4);
+      display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: bold; color: #020617;
+    }
+    .brand-title { font-size: 1.5rem; font-weight: 700; color: #fff; }
+    .brand-subtitle { font-size: 0.75rem; color: var(--text-muted); }
+    .header-actions { display: flex; align-items: center; gap: 0.75rem; }
+    .status-pill {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.85rem;
+      border-radius: 9999px; background: #0f172a; border: 1px solid #1e293b; font-size: 0.75rem;
+    }
+    .status-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; }
+    .dot-online { background-color: var(--color-emerald); box-shadow: 0 0 8px var(--color-emerald); }
+    .dot-stale { background-color: var(--color-amber); }
+    .dot-offline { background-color: var(--color-red); }
+    .btn-link {
+      padding: 0.35rem 0.85rem; border-radius: 0.5rem; background: #1e293b; border: 1px solid #334155;
+      color: #cbd5e1; font-size: 0.75rem; text-decoration: none; transition: background 0.2s;
+    }
+    .btn-link:hover { background: #334155; }
+    .grid-kpi {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 1rem; padding: 1.25rem;
+    }
+    .kpi-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
+    .kpi-value { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
+    .kpi-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .grid-main {
+      display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-bottom: 2rem;
+    }
+    @media (min-width: 900px) {
+      .grid-main { grid-template-columns: 1fr 1fr; }
+    }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.35rem; font-weight: 500; }
+    textarea, select, input {
+      width: 100%; background: #0b1329; border: 1px solid #334155; border-radius: 0.6rem;
+      padding: 0.65rem 0.75rem; color: #fff; font-size: 0.85rem; outline: none; transition: border-color 0.2s;
+    }
+    textarea:focus, select:focus, input:focus { border-color: var(--color-emerald); }
+    textarea { resize: vertical; min-height: 80px; }
+    .presets-box { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+    .btn-preset {
+      background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem;
+      padding: 0.25rem 0.55rem; font-size: 0.7rem; color: #cbd5e1; cursor: pointer; transition: background 0.15s;
+    }
+    .btn-preset:hover { background: #334155; color: #fff; }
+    .row-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .btn-submit {
+      width: 100%; background: linear-gradient(135deg, #10b981, #0d9488); border: none; border-radius: 0.75rem;
+      padding: 0.85rem; font-weight: 600; font-size: 0.9rem; color: #020617; cursor: pointer; transition: opacity 0.2s;
+    }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error-box {
+      margin-top: 0.75rem; padding: 0.65rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.75rem;
+    }
+    .stale-notice {
+      margin-bottom: 0.75rem; padding: 0.45rem 0.65rem; border-radius: 0.4rem; background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3); color: #fde68a; font-size: 0.7rem; font-weight: 500;
+    }
+    .tier-badge {
+      display: inline-block; padding: 0.25rem 0.65rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 700;
+    }
+    .tier-skip { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .tier-narrow { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .tier-deep { background: rgba(192, 132, 252, 0.2); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); }
+    .tier-static { background: #334155; color: #cbd5e1; border: 1px solid #475569; }
+    .fast-pill {
+      padding: 0.15rem 0.5rem; border-radius: 9999px; background: rgba(245, 158, 11, 0.2);
+      color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.65rem; font-weight: 700;
+    }
+    .waterfall-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin: 0.75rem 0; text-align: center; }
+    .waterfall-box { background: #0b1329; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 0.5rem; }
+    .answer-box {
+      background: #0b1329; border: 1px solid #1e293b; border-radius: 0.6rem; padding: 0.75rem;
+      font-size: 0.8rem; line-height: 1.4; color: #cbd5e1; font-family: monospace; white-space: pre-wrap; margin-top: 0.5rem;
+    }
+    .chunks-box { margin-top: 0.75rem; }
+    .chunk-item {
+      background: #060c1d; border: 1px solid #1e293b; border-radius: 0.4rem; padding: 0.5rem;
+      font-size: 0.75rem; margin-top: 0.35rem; color: #94a3b8;
+    }
+    .table-container { overflow-x: auto; margin-top: 0.75rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: left; }
+    th { padding: 0.65rem 0.5rem; border-bottom: 1px solid #1e293b; color: var(--text-muted); font-weight: 500; }
+    td { padding: 0.65rem 0.5rem; border-bottom: 1px solid #0f172a; }
+    .placeholder-state { text-align: center; color: var(--text-muted); padding: 3rem 1rem; font-size: 0.85rem; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-  <div id="root"></div>
+<body>
+  <div class="container" id="root">
+    <!-- Header -->
+    <header>
+      <div class="brand-group">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <h1 class="brand-title">Adaptive RAG Optimizer</h1>
+          <p class="brand-subtitle">Dynamic Chunk Budget Routing (k = 0, 2, or 6) with Hybrid Fast-Path</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="status-pill">
+          <span class="status-dot dot-offline" id="health-dot"></span>
+          <span id="health-text" style="color: #cbd5e1;">Checking Engine...</span>
+        </div>
+        <a href="/docs" target="_blank" class="btn-link">API Docs ↗</a>
+      </div>
+    </header>
 
-  <script type="text/babel">
-    const { useState, useEffect } = React;
+    <!-- KPI Metric Cards -->
+    <section class="grid-kpi">
+      <div class="card">
+        <div class="kpi-label">Total Queries</div>
+        <div class="kpi-value" id="kpi-total-queries">0</div>
+        <div class="kpi-sub" id="kpi-fast-path" style="color: var(--color-emerald);">⚡ 0 fast-path hits (0%)</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Tokens Saved</div>
+        <div class="kpi-value" id="kpi-tokens-saved-pct" style="color: var(--color-emerald);">0%</div>
+        <div class="kpi-sub" id="kpi-tokens-saved-total">0 tokens reduced</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Est. USD Saved</div>
+        <div class="kpi-value" id="kpi-usd-saved" style="color: var(--color-sky);">$0.0000</div>
+        <div class="kpi-sub" id="kpi-cost-pct">Cost reduction: 0%</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Avg. Router Overhead</div>
+        <div class="kpi-value" id="kpi-router-latency" style="color: var(--color-purple);">0 ms</div>
+        <div class="kpi-sub" id="kpi-total-latency">Total avg latency: 0 ms</div>
+      </div>
+    </section>
 
-    const PRESETS = [
-      { label: "⚡ Arithmetic (SKIP, k=0)", query: "What is 25 * 48?", tier: "SKIP" },
-      { label: "💬 Greeting (Fast-Path)", query: "Hello, can you assist me with some questions?", tier: "SKIP" },
-      { label: "🔍 Factual Lookup (NARROW, k=2)", query: "What is the EU cooling-off period for digital goods?", tier: "NARROW" },
-      { label: "📊 Complex Multi-Hop (DEEP, k=6)", query: "Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened.", tier: "DEEP" }
-    ];
+    <!-- Main Grid: Playground & Live Result -->
+    <div class="grid-main">
+      <!-- Left: Playground Input -->
+      <div class="card">
+        <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem;">Query Playground</h2>
 
-    function App() {
-      const [query, setQuery] = useState("What is the EU cooling-off period for digital goods?");
-      const [mode, setMode] = useState("adaptive");
-      const [staticK, setStaticK] = useState(5);
-      const [loading, setLoading] = useState(false);
-      const [result, setResult] = useState(null);
-      const [health, setHealth] = useState(null);
-      const [analytics, setAnalytics] = useState(null);
-      const [error, setError] = useState(null);
+        <div style="margin-bottom: 0.75rem;">
+          <span style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Quick Presets:</span>
+          <div class="presets-box">
+            <button type="button" class="btn-preset" data-query="What is 25 * 48?">⚡ Math (k=0 Fast-Path)</button>
+            <button type="button" class="btn-preset" data-query="Hello, can you assist me with some questions?">💬 Greeting (k=0 Fast-Path)</button>
+            <button type="button" class="btn-preset" data-query="What is the EU cooling-off period for digital goods?">🔍 Policy Lookup (k=2 NARROW)</button>
+            <button type="button" class="btn-preset" data-query="Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened.">📊 Churn Analysis (k=6 DEEP)</button>
+          </div>
+        </div>
 
-      // Fetch health & analytics
-      const refreshStatus = async () => {
-        try {
-          const hRes = await fetch("/health");
-          if (hRes.ok) setHealth(await hRes.json());
-          const aRes = await fetch("/analytics");
-          if (aRes.ok) setAnalytics(await aRes.json());
-        } catch (e) {
-          console.error("Status fetch failed:", e);
-        }
-      };
+        <form id="query-form">
+          <div class="form-group">
+            <label for="user-query-input">User Query</label>
+            <textarea id="user-query-input" placeholder="Enter query to test adaptive routing...">What is the EU cooling-off period for digital goods?</textarea>
+          </div>
 
-      useEffect(() => {
-        refreshStatus();
-        const interval = setInterval(refreshStatus, 4000);
-        return () => clearInterval(interval);
-      }, []);
-
-      const handleRunQuery = async () => {
-        if (!query.trim()) return;
-        setLoading(true);
-        setError(null);
-        try {
-          const res = await fetch("/query", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, mode, static_k: Number(staticK) })
-          });
-          if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || "Query execution failed");
-          }
-          const data = await res.json();
-          setResult(data);
-          refreshStatus();
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      const getTierColor = (tier) => {
-        if (tier === "SKIP") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-        if (tier === "NARROW") return "bg-sky-500/20 text-sky-400 border-sky-500/30";
-        if (tier === "DEEP") return "bg-purple-500/20 text-purple-400 border-purple-500/30";
-        return "bg-slate-700 text-slate-300 border-slate-600";
-      };
-
-      return (
-        <div class="max-w-7xl mx-auto px-4 py-8">
-          {/* Header */}
-          <header class="flex flex-col md:flex-row md:items-center justify-between pb-8 mb-8 border-b border-slate-800 gap-4">
+          <div class="row-inputs form-group">
             <div>
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center font-bold text-slate-950 text-xl shadow-lg shadow-emerald-500/20">
-                  ⚡
-                </div>
-                <div>
-                  <h1 class="text-2xl font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                    Adaptive RAG Optimizer
-                  </h1>
-                  <p class="text-xs text-slate-400">Dynamic Chunk Budget Routing ($k \in \{0, 2, 6\}$) with Hybrid Fast-Path</p>
-                </div>
-              </div>
+              <label for="routing-mode-select">Routing Mode</label>
+              <select id="routing-mode-select">
+                <option value="adaptive">Adaptive RAG (k in 0, 2, 6)</option>
+                <option value="static">Static Baseline (Fixed k)</option>
+              </select>
             </div>
-
-            <div class="flex items-center gap-3">
-              <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs">
-                <span class={`w-2.5 h-2.5 rounded-full ${health?.status === 'healthy' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                <span class="text-slate-300">{health?.engine_loaded ? "Engine Ready" : "Initializing..."}</span>
-              </div>
-              <a href="/docs" target="_blank" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 transition">
-                API Docs ↗
-              </a>
-            </div>
-          </header>
-
-          {/* KPI Analytics Cards */}
-          <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div class="glass-card p-5 rounded-2xl">
-              <div class="text-xs font-medium text-slate-400">Total Queries</div>
-              <div class="text-2xl font-bold text-white mt-1">{analytics?.total_queries ?? 0}</div>
-              <div class="text-[11px] text-emerald-400 mt-1">
-                ⚡ {analytics?.fast_path_hits ?? 0} fast-path hits ({analytics?.fast_path_ratio_pct ?? 0}%)
-              </div>
-            </div>
-
-            <div class="glass-card p-5 rounded-2xl">
-              <div class="text-xs font-medium text-slate-400">Tokens Saved</div>
-              <div class="text-2xl font-bold text-emerald-400 mt-1">
-                {analytics?.token_metrics?.token_savings_pct ?? 0}%
-              </div>
-              <div class="text-[11px] text-slate-400 mt-1">
-                {analytics?.token_metrics?.total_tokens_saved?.toLocaleString() ?? 0} tokens reduced
-              </div>
-            </div>
-
-            <div class="glass-card p-5 rounded-2xl">
-              <div class="text-xs font-medium text-slate-400">Est. USD Saved</div>
-              <div class="text-2xl font-bold text-cyan-400 mt-1">
-                ${analytics?.cost_metrics_usd?.estimated_usd_saved?.toFixed(4) ?? "0.0000"}
-              </div>
-              <div class="text-[11px] text-slate-400 mt-1">
-                Cost reduction: {analytics?.cost_metrics_usd?.cost_savings_pct ?? 0}%
-              </div>
-            </div>
-
-            <div class="glass-card p-5 rounded-2xl">
-              <div class="text-xs font-medium text-slate-400">Avg. Router Overhead</div>
-              <div class="text-2xl font-bold text-purple-400 mt-1">
-                {analytics?.performance_ms?.avg_router_latency_ms ?? 0} ms
-              </div>
-              <div class="text-[11px] text-slate-400 mt-1">
-                Total avg latency: {analytics?.performance_ms?.avg_total_latency_ms ?? 0} ms
-              </div>
-            </div>
-          </section>
-
-          {/* Main Grid: Playground & Live Result */}
-          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
-            {/* Left: Input Playground */}
-            <div class="lg:col-span-6 flex flex-col gap-6">
-              <div class="glass-card p-6 rounded-2xl">
-                <h2 class="text-lg font-semibold text-white mb-3">Query Playground</h2>
-                
-                {/* Presets */}
-                <div class="mb-4">
-                  <span class="text-xs text-slate-400 mb-2 block">Quick Test Presets:</span>
-                  <div class="flex flex-wrap gap-2">
-                    {PRESETS.map((p, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setQuery(p.query)}
-                        class="px-2.5 py-1 text-xs rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 transition"
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Input Textarea */}
-                <div class="mb-4">
-                  <label class="text-xs text-slate-400 mb-1.5 block">User Query</label>
-                  <textarea
-                    rows="3"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Enter query to test adaptive routing..."
-                    class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  />
-                </div>
-
-                {/* Configuration controls */}
-                <div class="grid grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <label class="text-xs text-slate-400 mb-1.5 block">Routing Mode</label>
-                    <select
-                      value={mode}
-                      onChange={(e) => setMode(e.target.value)}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none"
-                    >
-                      <option value="adaptive">Adaptive RAG (k in 0, 2, 6)</option>
-                      <option value="static">Static Baseline (Fixed k)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="text-xs text-slate-400 mb-1.5 block">Static k (for baseline)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="20"
-                      value={staticK}
-                      onChange={(e) => setStaticK(e.target.value)}
-                      disabled={mode === "adaptive"}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none disabled:opacity-40"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleRunQuery}
-                  disabled={loading}
-                  class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 font-semibold text-slate-950 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <div class="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
-                      Routing & Retrieving...
-                    </>
-                  ) : (
-                    <>Run Query</>
-                  )}
-                </button>
-
-                {error && (
-                  <div class="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                    {error}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right: Live Result Card */}
-            <div class="lg:col-span-6 flex flex-col gap-6">
-              <div class="glass-card p-6 rounded-2xl flex-1 flex flex-col">
-                <h2 class="text-lg font-semibold text-white mb-4">Execution Results</h2>
-
-                {result ? (
-                  <div class="flex flex-col gap-4">
-                    {/* Tier & Latency Bar */}
-                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-                      <div class="flex items-center gap-2">
-                        <span class={`px-3 py-1 rounded-lg text-xs font-bold border ${getTierColor(result.tier)}`}>
-                          {result.tier} (k={result.k_used})
-                        </span>
-                        {result.fast_path && (
-                          <span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold">
-                            ⚡ Fast-Path
-                          </span>
-                        )}
-                      </div>
-                      <div class="text-right">
-                        <span class="text-xs text-slate-400">Total Latency: </span>
-                        <span class="text-xs font-semibold text-white">{result.total_latency_ms} ms</span>
-                      </div>
-                    </div>
-
-                    {/* Latency Waterfall Breakdown */}
-                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800/80">
-                        <div class="text-[10px] text-slate-400">Router Latency</div>
-                        <div class="font-bold text-slate-200 mt-0.5">{result.router_ms} ms</div>
-                      </div>
-                      <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800/80">
-                        <div class="text-[10px] text-slate-400">Retrieval Latency</div>
-                        <div class="font-bold text-slate-200 mt-0.5">{result.retrieval_ms} ms</div>
-                      </div>
-                      <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800/80">
-                        <div class="text-[10px] text-slate-400">Input Tokens</div>
-                        <div class="font-bold text-emerald-400 mt-0.5">{result.input_tokens} tok</div>
-                      </div>
-                    </div>
-
-                    {/* Synthesized Answer */}
-                    <div>
-                      <span class="text-xs text-slate-400 mb-1.5 block font-medium">Synthesized Response:</span>
-                      <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 leading-relaxed font-mono">
-                        {result.answer}
-                      </div>
-                    </div>
-
-                    {/* Context Chunks Accordion */}
-                    {result.chunks && result.chunks.length > 0 && (
-                      <div>
-                        <span class="text-xs text-slate-400 mb-1.5 block font-medium">
-                          Retrieved Context Chunks ({result.chunks.length}):
-                        </span>
-                        <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
-                          {result.chunks.map((c, i) => (
-                            <div key={i} class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
-                              <span class="text-emerald-400 font-semibold mr-1.5">Chunk #{i+1}:</span>
-                              {c}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div class="flex-1 flex flex-col items-center justify-center text-slate-500 text-center py-12">
-                    <div class="text-4xl mb-3">🎯</div>
-                    <p class="text-sm">Select a query preset or enter a custom prompt and click "Run Query" to see live routing in action.</p>
-                  </div>
-                )}
-              </div>
+            <div>
+              <label for="static-k-input">Static k (for baseline)</label>
+              <input type="number" id="static-k-input" min="0" max="20" value="5" disabled />
             </div>
           </div>
 
-          {/* Recent Queries Table */}
-          {analytics?.recent_queries && analytics.recent_queries.length > 0 && (
-            <section class="glass-card p-6 rounded-2xl">
-              <h3 class="text-base font-semibold text-white mb-4">Live Activity Stream (Last 15 Queries)</h3>
-              <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs">
-                  <thead class="text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th class="pb-2.5">Time</th>
-                      <th class="pb-2.5">Query</th>
-                      <th class="pb-2.5">Tier</th>
-                      <th class="pb-2.5">k</th>
-                      <th class="pb-2.5">Tokens</th>
-                      <th class="pb-2.5">Latency</th>
-                      <th class="pb-2.5">Type</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-800/60">
-                    {analytics.recent_queries.map((q, idx) => (
-                      <tr key={idx} class="hover:bg-slate-800/30 transition">
-                        <td class="py-2.5 text-slate-400 font-mono text-[11px]">{q.timestamp}</td>
-                        <td class="py-2.5 text-slate-200 max-w-xs truncate">{q.query}</td>
-                        <td class="py-2.5">
-                          <span class={`px-2 py-0.5 rounded text-[10px] font-bold border ${getTierColor(q.tier)}`}>
-                            {q.tier}
-                          </span>
-                        </td>
-                        <td class="py-2.5 text-slate-300 font-mono">{q.k_used}</td>
-                        <td class="py-2.5 text-emerald-400 font-mono">{q.tokens}</td>
-                        <td class="py-2.5 text-slate-300 font-mono">{q.latency_ms} ms</td>
-                        <td class="py-2.5">
-                          {q.fast_path ? (
-                            <span class="text-amber-400 text-[10px] font-semibold">⚡ Fast-Path</span>
-                          ) : (
-                            <span class="text-slate-400 text-[10px]">ML Router</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-        </div>
-      );
-    }
+          <button type="submit" class="btn-submit" id="submit-btn">Run Query</button>
+        </form>
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+        <div id="error-container" style="display: none;" class="error-box"></div>
+      </div>
+
+      <!-- Right: Execution Results -->
+      <div class="card" style="display: flex; flex-direction: column;">
+        <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem;">Execution Results</h2>
+
+        <div id="result-container" style="display: none; flex: 1;">
+          <div id="stale-result-notice" class="stale-notice" style="display: none;">
+            ⚠️ Previous Run Result (Current Submission Failed or In-Progress)
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #0b1329; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 0.6rem;">
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span id="tier-badge" class="tier-badge tier-narrow">NARROW (k=2)</span>
+              <span id="fast-badge" class="fast-pill" style="display: none;">⚡ Fast-Path</span>
+            </div>
+            <div style="font-size: 0.75rem;">
+              <span style="color: var(--text-muted);">Total: </span>
+              <span id="res-total-latency" style="font-weight: 700;">0 ms</span>
+            </div>
+          </div>
+
+          <div class="waterfall-grid">
+            <div class="waterfall-box">
+              <div style="font-size: 0.65rem; color: var(--text-muted);">Router Latency</div>
+              <div id="res-router-latency" style="font-weight: 700; margin-top: 0.2rem;">0 ms</div>
+            </div>
+            <div class="waterfall-box">
+              <div style="font-size: 0.65rem; color: var(--text-muted);">Retrieval Latency</div>
+              <div id="res-retrieval-latency" style="font-weight: 700; margin-top: 0.2rem;">0 ms</div>
+            </div>
+            <div class="waterfall-box">
+              <div style="font-size: 0.65rem; color: var(--text-muted);">Input Tokens</div>
+              <div id="res-input-tokens" style="font-weight: 700; color: var(--color-emerald); margin-top: 0.2rem;">0 tok</div>
+            </div>
+          </div>
+
+          <div style="margin-top: 0.5rem;">
+            <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 500;">Executed Prompt & Mode:</div>
+            <div id="res-submitted-info" style="font-size: 0.75rem; color: #94a3b8; font-style: italic; margin-top: 0.15rem;"></div>
+          </div>
+
+          <div style="margin-top: 0.5rem;">
+            <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 500;">Synthesized Response:</div>
+            <div id="res-answer" class="answer-box"></div>
+          </div>
+
+          <div class="chunks-box" id="res-chunks-container" style="display: none;">
+            <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 500;">Retrieved Chunks (<span id="chunks-count">0</span>):</div>
+            <div id="chunks-list" style="max-height: 140px; overflow-y: auto;"></div>
+          </div>
+        </div>
+
+        <div id="placeholder-container" class="placeholder-state">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🎯</div>
+          <p>Select a preset or enter a query and click "Run Query" to see adaptive routing live.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Activity Stream -->
+    <section class="card">
+      <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">Live Activity Stream (Recent Traffic)</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Mode</th>
+              <th>Tier</th>
+              <th>k</th>
+              <th>Input Tokens</th>
+              <th>Latency</th>
+              <th>Routing Mechanism</th>
+            </tr>
+          </thead>
+          <tbody id="activity-tbody">
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No queries recorded yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      // Ordering token for analytics refreshes
+      var lastAppliedAnalyticsToken = 0;
+      var analyticsTokenCounter = 0;
+      var activePollTimeout = null;
+      var pollAbortController = null;
+      var activeQueryAbortController = null;
+
+      // DOM Elements
+      var queryInput = document.getElementById("user-query-input");
+      var modeSelect = document.getElementById("routing-mode-select");
+      var staticKInput = document.getElementById("static-k-input");
+      var queryForm = document.getElementById("query-form");
+      var submitBtn = document.getElementById("submit-btn");
+      var errorBox = document.getElementById("error-container");
+
+      var healthDot = document.getElementById("health-dot");
+      var healthText = document.getElementById("health-text");
+
+      var kpiTotal = document.getElementById("kpi-total-queries");
+      var kpiFast = document.getElementById("kpi-fast-path");
+      var kpiSavedPct = document.getElementById("kpi-tokens-saved-pct");
+      var kpiSavedTotal = document.getElementById("kpi-tokens-saved-total");
+      var kpiUsdSaved = document.getElementById("kpi-usd-saved");
+      var kpiCostPct = document.getElementById("kpi-cost-pct");
+      var kpiRouterLatency = document.getElementById("kpi-router-latency");
+      var kpiTotalLatency = document.getElementById("kpi-total-latency");
+
+      var resultContainer = document.getElementById("result-container");
+      var placeholderContainer = document.getElementById("placeholder-container");
+      var staleNotice = document.getElementById("stale-result-notice");
+      var tierBadge = document.getElementById("tier-badge");
+      var fastBadge = document.getElementById("fast-badge");
+      var resTotalLatency = document.getElementById("res-total-latency");
+      var resRouterLatency = document.getElementById("res-router-latency");
+      var resRetrievalLatency = document.getElementById("res-retrieval-latency");
+      var resInputTokens = document.getElementById("res-input-tokens");
+      var resSubmittedInfo = document.getElementById("res-submitted-info");
+      var resAnswer = document.getElementById("res-answer");
+      var resChunksContainer = document.getElementById("res-chunks-container");
+      var chunksCount = document.getElementById("chunks-count");
+      var chunksList = document.getElementById("chunks-list");
+
+      var activityTbody = document.getElementById("activity-tbody");
+
+      // Preset click handlers
+      document.querySelectorAll(".btn-preset").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          queryInput.value = btn.getAttribute("data-query");
+        });
+      });
+
+      // Mode change handler
+      modeSelect.addEventListener("change", function () {
+        staticKInput.disabled = modeSelect.value === "adaptive";
+      });
+
+      // Independent Health Fetch with 5s timeout
+      function fetchHealth(signal) {
+        return fetch("/health", { signal: signal })
+          .then(function (res) {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.json();
+          })
+          .then(function (data) {
+            healthDot.className = "status-dot dot-online";
+            healthText.textContent = data.engine_loaded ? "Engine Ready" : "Initializing Engine...";
+          })
+          .catch(function (err) {
+            if (err.name === "AbortError") return;
+            healthDot.className = "status-dot dot-stale";
+            healthText.textContent = "Health: Last Known (Stale)";
+          });
+      }
+
+      // Independent Analytics Fetch with ordering token and 5s timeout
+      function fetchAnalytics(signal) {
+        var token = ++analyticsTokenCounter;
+        return fetch("/analytics", { signal: signal })
+          .then(function (res) {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.json();
+          })
+          .then(function (data) {
+            if (token < lastAppliedAnalyticsToken) return; // Stale response discarded
+            lastAppliedAnalyticsToken = token;
+            updateAnalyticsUI(data);
+          })
+          .catch(function (err) {
+            if (err.name === "AbortError") return;
+            // Retain existing values and mark label
+            kpiFast.textContent = kpiFast.textContent.replace(" (Stale)", "") + " (Stale)";
+          });
+      }
+
+      function updateAnalyticsUI(data) {
+        kpiTotal.textContent = data.total_queries || 0;
+        kpiFast.textContent = "⚡ " + (data.fast_path_hits || 0) + " fast-path hits (" + (data.fast_path_ratio_pct || 0) + "%)";
+        kpiSavedPct.textContent = (data.token_metrics ? data.token_metrics.token_savings_pct : 0) + "%";
+        kpiSavedTotal.textContent = (data.token_metrics ? (data.token_metrics.total_tokens_saved || 0).toLocaleString() : 0) + " tokens reduced";
+        kpiUsdSaved.textContent = "$" + (data.cost_metrics_usd ? (data.cost_metrics_usd.estimated_usd_saved || 0).toFixed(4) : "0.0000");
+        kpiCostPct.textContent = "Cost reduction: " + (data.cost_metrics_usd ? data.cost_metrics_usd.cost_savings_pct : 0) + "%";
+        kpiRouterLatency.textContent = (data.performance_ms ? data.performance_ms.avg_router_latency_ms : 0) + " ms";
+        kpiTotalLatency.textContent = "Total avg latency: " + (data.performance_ms ? data.performance_ms.avg_total_latency_ms : 0) + " ms";
+
+        // Activity stream table
+        if (data.recent_queries && data.recent_queries.length > 0) {
+          activityTbody.innerHTML = "";
+          data.recent_queries.forEach(function (q) {
+            var tr = document.createElement("tr");
+
+            var tdTime = document.createElement("td");
+            tdTime.textContent = q.timestamp || "-";
+            tdTime.style.color = "#94a3b8";
+
+            var tdMode = document.createElement("td");
+            tdMode.textContent = q.mode || "adaptive";
+            tdMode.style.fontWeight = "600";
+
+            var tdTier = document.createElement("td");
+            var tierSpan = document.createElement("span");
+            var tierClass = "tier-static";
+            if (q.tier === "SKIP") tierClass = "tier-skip";
+            else if (q.tier === "NARROW") tierClass = "tier-narrow";
+            else if (q.tier === "DEEP") tierClass = "tier-deep";
+            tierSpan.className = "tier-badge " + tierClass;
+            tierSpan.textContent = q.tier;
+            tdTier.appendChild(tierSpan);
+
+            var tdK = document.createElement("td");
+            tdK.textContent = q.k_used !== undefined ? q.k_used : "-";
+
+            var tdTok = document.createElement("td");
+            tdTok.textContent = q.tokens || 0;
+            tdTok.style.color = "var(--color-emerald)";
+
+            var tdLat = document.createElement("td");
+            tdLat.textContent = (q.latency_ms !== undefined ? q.latency_ms : 0) + " ms";
+
+            var tdMech = document.createElement("td");
+            if (q.mode === "static") {
+              tdMech.innerHTML = '<span style="color: #94a3b8; font-weight: 600;">Static</span>';
+            } else if (q.fast_path) {
+              tdMech.innerHTML = '<span class="fast-pill">⚡ Fast-Path</span>';
+            } else {
+              tdMech.innerHTML = '<span style="color: #64748b;">ML Router</span>';
+            }
+
+            tr.appendChild(tdTime);
+            tr.appendChild(tdMode);
+            tr.appendChild(tdTier);
+            tr.appendChild(tdK);
+            tr.appendChild(tdTok);
+            tr.appendChild(tdLat);
+            tr.appendChild(tdMech);
+            activityTbody.appendChild(tr);
+          });
+        }
+      }
+
+      // Polling cycle: next poll is scheduled only AFTER current refresh settles
+      function scheduleNextPoll() {
+        if (activePollTimeout) clearTimeout(activePollTimeout);
+        activePollTimeout = setTimeout(runPoll, 4000);
+      }
+
+      function runPoll() {
+        if (pollAbortController) pollAbortController.abort();
+        pollAbortController = new AbortController();
+
+        var timeoutId = setTimeout(function () {
+          if (pollAbortController) pollAbortController.abort();
+        }, 5000);
+
+        Promise.allSettled([
+          fetchHealth(pollAbortController.signal),
+          fetchAnalytics(pollAbortController.signal)
+        ]).then(function () {
+          clearTimeout(timeoutId);
+          scheduleNextPoll();
+        });
+      }
+
+      // Initial poll
+      runPoll();
+
+      // Form submission handler with input validation and single timeout
+      queryForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var q = queryInput.value.trim();
+        if (!q) {
+          showError("Query cannot be empty.");
+          return;
+        }
+
+        var m = modeSelect.value;
+        var payload = { query: q, mode: m };
+
+        if (m === "static") {
+          var kRaw = staticKInput.value.trim();
+          if (kRaw === "") {
+            showError("Static k cannot be empty when in Static mode.");
+            return;
+          }
+          var parsedK = Number(kRaw);
+          if (!Number.isInteger(parsedK) || parsedK < 0 || parsedK > 20) {
+            showError("Static k must be an integer between 0 and 20.");
+            return;
+          }
+          payload.static_k = parsedK;
+        }
+
+        clearError();
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Routing & Retrieving...";
+
+        // If prior result exists, show stale indicator while new run executes
+        if (resultContainer.style.display !== "none") {
+          staleNotice.style.display = "block";
+        }
+
+        if (activeQueryAbortController) activeQueryAbortController.abort();
+        activeQueryAbortController = new AbortController();
+
+        // Enforce single deadline of 30 seconds across fetch and body read
+        var queryTimeoutId = setTimeout(function () {
+          if (activeQueryAbortController) activeQueryAbortController.abort();
+        }, 30000);
+
+        fetch("/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: activeQueryAbortController.signal
+        })
+          .then(function (res) {
+            if (!res.ok) {
+              return res.json().then(function (err) {
+                throw new Error(err.detail || "Server error HTTP " + res.status);
+              });
+            }
+            return res.json();
+          })
+          .then(function (data) {
+            clearTimeout(queryTimeoutId);
+            staleNotice.style.display = "none";
+            renderResult(data, q, m);
+            // Refresh analytics immediately
+            if (pollAbortController) pollAbortController.abort();
+            pollAbortController = new AbortController();
+            fetchAnalytics(pollAbortController.signal);
+          })
+          .catch(function (err) {
+            clearTimeout(queryTimeoutId);
+            if (err.name === "AbortError") {
+              showError("Request timed out after 30 seconds. Try again.");
+            } else {
+              showError(err.message || "Query failed.");
+            }
+          })
+          .finally(function () {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Run Query";
+          });
+      });
+
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.style.display = "block";
+      }
+
+      function clearError() {
+        errorBox.textContent = "";
+        errorBox.style.display = "none";
+      }
+
+      function renderResult(data, submittedQuery, submittedMode) {
+        placeholderContainer.style.display = "none";
+        resultContainer.style.display = "block";
+
+        var t = data.tier || "NARROW";
+        tierBadge.textContent = t + " (k=" + (data.k_used !== undefined ? data.k_used : 0) + ")";
+        var badgeClass = "tier-static";
+        if (t === "SKIP") badgeClass = "tier-skip";
+        else if (t === "NARROW") badgeClass = "tier-narrow";
+        else if (t === "DEEP") badgeClass = "tier-deep";
+        tierBadge.className = "tier-badge " + badgeClass;
+
+        fastBadge.style.display = data.fast_path ? "inline-block" : "none";
+        resTotalLatency.textContent = (data.total_latency_ms !== undefined ? data.total_latency_ms : 0) + " ms";
+        resRouterLatency.textContent = (data.router_ms !== undefined ? data.router_ms : 0) + " ms";
+        resRetrievalLatency.textContent = (data.retrieval_ms !== undefined ? data.retrieval_ms : 0) + " ms";
+        resInputTokens.textContent = (data.input_tokens !== undefined ? data.input_tokens : 0) + " tok";
+
+        resSubmittedInfo.textContent = '"' + submittedQuery + '" [' + submittedMode + " mode]";
+        resAnswer.textContent = data.answer || "No answer generated.";
+
+        if (data.chunks && data.chunks.length > 0) {
+          resChunksContainer.style.display = "block";
+          chunksCount.textContent = data.chunks.length;
+          chunksList.innerHTML = "";
+          data.chunks.forEach(function (c, idx) {
+            var div = document.createElement("div");
+            div.className = "chunk-item";
+            var text = typeof c === "string" ? c : (c.text || c.document || JSON.stringify(c));
+            div.textContent = "#" + (idx + 1) + ": " + text;
+            chunksList.appendChild(div);
+          });
+        } else {
+          resChunksContainer.style.display = "none";
+        }
+      }
+
+      // Cleanup on window unload
+      window.addEventListener("beforeunload", function () {
+        if (activePollTimeout) clearTimeout(activePollTimeout);
+        if (pollAbortController) pollAbortController.abort();
+        if (activeQueryAbortController) activeQueryAbortController.abort();
+      });
+    })();
   </script>
 </body>
 </html>

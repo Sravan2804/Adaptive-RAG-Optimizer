@@ -23,7 +23,7 @@ Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g
 
 ### The Adaptive RAG Solution:
 **Adaptive RAG Optimizer** deploys a multi-tiered routing pipeline at the ingestion gateway:
-- **Tier 0 (Deterministic Fast-Path)**: Instantaneous sub-0.05ms regex classification for calculations, conversions, and greetings.
+- **Tier 0 (Deterministic Fast-Path)**: Sub-0.05ms regex classification for arithmetic calculations and standalone greetings.
 - **Tier 1 (`SKIP`, $k=0$)**: Bypass vector search completely for closed-book, reasoning, or chit-chat queries.
 - **Tier 2 (`NARROW`, $k=2$)**: Retrieve minimal targeted context for direct factual lookups.
 - **Tier 3 (`DEEP`, $k=6$)**: Retrieve broader context for synthesis, comparisons, and complex reasoning.
@@ -38,7 +38,7 @@ Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g
 The query router uses an end-to-end `scikit-learn` pipeline:
 ```python
 Pipeline([
-    ("hasher", HashingVectorizer(n_features=4096, alternate_sign=False, ngram_range=(1, 2))),
+    ("hasher", HashingVectorizer(n_features=4096, alternate_sign=False, ngram_range=(1, 2), norm=None)),
     ("tfidf", TfidfTransformer(sublinear_tf=True)),
     ("clf", LogisticRegression(C=2.0, max_iter=1000))
 ])
@@ -51,14 +51,14 @@ Pipeline([
 
 #### 2. Why `HashingVectorizer` Replaced the String Dictionary?
 - In standard `TfidfVectorizer`, an in-memory string vocabulary dictionary is stored and serialized with the model.
-- By using `HashingVectorizer` with 4,096 feature buckets and bi-grams (`ngram_range=(1, 2)`):
+- By using `HashingVectorizer(norm=None)` with 4,096 feature buckets and bi-grams (`ngram_range=(1, 2)`):
   - **Stateless & OOV Resilient**: The feature mapping uses MurmurHash3, completely eliminating the vocabulary dictionary from memory.
   - **Zero Vocabulary Memory Bloat**: Fixed memory footprint regardless of dataset growth.
-  - Paired with `TfidfTransformer(sublinear_tf=True)`, it retains full sublinear term-frequency dampening ($1 + \log(\text{tf})$).
+  - `norm=None` passes raw bucket counts to `TfidfTransformer(sublinear_tf=True)`, which applies IDF weighting, sublinear term-frequency dampening ($1 + \log(\text{tf})$), and L2 normalization.
 
-#### 3. Multi-Tiered Hybrid Fast-Path (0.018ms Latency)
-Before executing vectorization and classifier inference, queries pass through compiled regex filters that detect arithmetic, numerical solving, unit conversions, and conversational greetings.
-- Fast-path queries resolve in **0.018 ms** (a **99.9% reduction in routing latency**), returning `SKIP` ($k=0$) with $100\%$ confidence.
+#### 3. Multi-Tiered Hybrid Fast-Path (0.018ms Benchmark Latency)
+Before executing vectorization and classifier inference, queries pass through pre-compiled regex filters that match arithmetic expressions and standalone greetings. Unmatched queries (such as unit conversions or questions with topics) bypass the fast-path and proceed to the ML classifier; if the classifier chooses Class 0, the query returns `SKIP` with `fast_path: false`.
+- In benchmark measurements under local test conditions, fast-path queries achieved a router decision latency of **0.018 ms** (a **99% reduction in routing decision latency** compared to the ~1.8 ms ML classifier).
 
 ---
 
@@ -66,46 +66,58 @@ Before executing vectorization and classifier inference, queries pass through co
 
 ```mermaid
 flowchart TD
-    UserQuery["User Query"] --> GatewayAPI["FastAPI Gateway (/route or /query)"]
+    UserQuery["Incoming User Request"] --> Endpoint{"Target Endpoint"}
     
-    GatewayAPI --> FastPathCheck{"Matches Fast-Path Regex?<br/>(Math, Greetings, Conversions)"}
-    FastPathCheck -- "Yes (0.018 ms)" --> FastPathReturn["Fast-Path SKIP (k=0)<br/>Zero ML Inference"]
+    %% /route Flow
+    Endpoint -- "POST /route" --> RouteFastPath{"Fast-Path Regex Match?<br/>(Math, Standalone Greetings)"}
+    RouteFastPath -- "Yes" --> RouteFastResp["Immediate Response (k=0, SKIP, fast_path: true)<br/>No retrieval, no generation"]
+    RouteFastPath -- "No" --> RouteML["Hashing ML Router + Guardrail"]
+    RouteML --> RouteMLResp["Immediate Response (class_id, tier, k, confidence)<br/>No retrieval, no generation"]
     
-    FastPathCheck -- "No" --> HashingRouter["Hashing ML Router<br/>(HashingVectorizer + Logistic Regression)"]
-    HashingRouter --> ConfCheck{"Confidence >= 0.45?"}
+    %% /query Flow
+    Endpoint -- "POST /query" --> ModeCheck{"Execution Mode"}
     
-    ConfCheck -- "Yes" --> BranchClass{"Predicted Tier"}
-    ConfCheck -- "No (Uncertain)" --> GuardrailFallback["Safety Fallback: NARROW (k=2)"]
+    %% Static Mode
+    ModeCheck -- "mode = 'static'" --> StaticRetrieval["Bypass Router: Retrieve static_k Chunks<br/>from ChromaDB Vector Store"]
+    StaticRetrieval --> StaticPrompt["Assemble Contextual Prompt"]
+    StaticPrompt --> StaticGen["LLM Generator / Synthesizer"]
+    StaticGen --> StaticResp["Return Final Answer + Static Metrics"]
     
-    BranchClass -- "Class 0" --> SkipTier["SKIP Tier (k=0)<br/>Zero Vector Search"]
-    BranchClass -- "Class 1" --> NarrowTier["NARROW Tier (k=2)<br/>Targeted Factual Retrieval"]
-    BranchClass -- "Class 2" --> DeepTier["DEEP Tier (k=6)<br/>Multi-hop / Synthesis Retrieval"]
+    %% Adaptive Mode
+    ModeCheck -- "mode = 'adaptive'" --> AdaptFastPath{"Fast-Path Regex Match?<br/>(Math, Standalone Greetings)"}
+    AdaptFastPath -- "Yes" --> AdaptSkip["SKIP Tier (k=0): Zero Vector Retrieval"]
     
-    GuardrailFallback --> ChromaDB[("ChromaDB Vector Store<br/>(MiniLM-L6-v2 / Offline Fallback)")]
-    NarrowTier --> ChromaDB
-    DeepTier --> ChromaDB
+    AdaptFastPath -- "No" --> AdaptML["Hashing ML Router (4096 Buckets)"]
+    AdaptML --> AdaptConf{"Confidence >= 0.45?"}
+    AdaptConf -- "No (Uncertain)" --> AdaptFallback["Safety Guardrail: Fallback to NARROW (k=2)"]
+    AdaptConf -- "Yes" --> AdaptTier{"Predicted Tier"}
     
-    FastPathReturn --> PromptAssembler["Prompt Assembler & Tiktoken Encoder"]
-    SkipTier --> PromptAssembler
-    ChromaDB --> PromptAssembler
+    AdaptTier -- "Class 0" --> AdaptSkip
+    AdaptTier -- "Class 1" --> AdaptNarrow["NARROW Tier (k=2): Factual Retrieval"]
+    AdaptTier -- "Class 2" --> AdaptDeep["DEEP Tier (k=6): Multi-Hop Retrieval"]
     
-    PromptAssembler --> LLMGenerator["OpenAI LLM / Contextual Synthesizer"]
-    LLMGenerator --> AnalyticsTracker["Analytics Tracker (Tokens & Cost Saved)"]
-    AnalyticsTracker --> ClientResponse["JSON Response (Answer, Latency, Tokens, Cost)"]
+    AdaptFallback --> AdaptChroma[("ChromaDB Vector Store")]
+    AdaptNarrow --> AdaptChroma
+    AdaptDeep --> AdaptChroma
+    
+    AdaptSkip --> AdaptPrompt["Assemble Prompt (Context if any)"]
+    AdaptChroma --> AdaptPrompt
+    AdaptPrompt --> AdaptGen["LLM Generator / Synthesizer"]
+    AdaptGen --> AdaptResp["Return Final Answer + Token/Latency Metrics"]
 ```
 
 ---
 
-## 💻 Live Interactive React Playground
+## 💻 Live Interactive Playground Dashboard
 
-The project includes a modern, zero-Node-dependency **React 18 Single-Page Dashboard** served directly by FastAPI at **`http://localhost:8000/dashboard`** (or `/`):
+The project includes a self-contained, offline-ready single-page dashboard served directly by FastAPI at **`http://localhost:8000/dashboard`** (or `/`):
 
 - **Real-Time KPI Cards**: Live counters for Total Queries, Fast-Path Ratio, Cumulative Tokens Saved (%), and Estimated Dollar Savings.
 - **Interactive Playground**: Test queries with one-click presets or custom prompts across Adaptive and Static modes.
 - **Dynamic Tier Indicators**: Real-time glow badges (`SKIP` in Emerald, `NARROW` in Sky-Blue, `DEEP` in Purple) with fast-path detection pills.
-- **Latency Waterfall**: Microsecond router latency, retrieval latency, and end-to-end response times.
+- **Latency Waterfall**: Router decision latency, vector retrieval latency, and end-to-end response times.
 - **Context Document Accordion**: Live inspection of retrieved ChromaDB chunks.
-- **Live Activity Stream**: Real-time tabular feed of the last 15 queries with tokens saved and execution metrics.
+- **Live Activity Stream**: Real-time tabular feed of recent queries displaying input tokens, latencies, tiers, and routing mechanism.
 
 ---
 
@@ -139,7 +151,7 @@ Average Input Token Reduction: 38.7%
 ```
 
 > [!NOTE]
-> On fast-path queries (*"What is 25 * 48?"*), router latency drops to **0.018 ms** and end-to-end execution drops to **0.08 ms**, achieving an **83.8% token reduction** with zero retrieval latency.
+> Latency figures represent benchmark measurements under local test conditions rather than runtime guarantees. For fast-path queries (*"What is 25 * 48?"*), router decision latency measured **0.018 ms** (a 99% reduction vs the ~1.8 ms ML classifier), and end-to-end query latency measured **0.08 ms** using local direct/synthetic generation output (excluding external LLM API network transport), achieving an **83.8% input token reduction** with zero vector retrieval.
 
 ---
 
@@ -149,7 +161,7 @@ Average Input Token Reduction: 38.7%
 Adaptive-RAG-Optimizer/
 ├── data/
 │   ├── knowledge_base.json         # Knowledge base documents (policies, SLA, security)
-│   └── router_dataset.csv          # Labeled queries dataset (query, class_label)
+│   └── router_dataset.csv          # Labeled queries dataset (query, label)
 ├── models/
 │   └── query_router.joblib         # 132 KB stateless HashingVectorizer classifier
 ├── src/
