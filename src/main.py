@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import threading
+import time
 from typing import Optional, Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -9,20 +11,38 @@ try:
 except ImportError:
     from src.pipeline import AdaptiveRAGEngine, ACTION_MAP
 
+logger = logging.getLogger("adaptive_rag_gateway")
+
 engine: Optional[AdaptiveRAGEngine] = None
 _engine_lock = threading.Lock()
+_retry_deadline: float = 0.0
+RETRY_COOLDOWN_SECONDS: float = 2.0
 
 def get_engine() -> Optional[AdaptiveRAGEngine]:
-    global engine
-    if engine is None:
-        with _engine_lock:
-            if engine is None:
-                try:
-                    engine = AdaptiveRAGEngine()
-                except Exception:
-                    engine = None
-                    return None
-    return engine
+    global engine, _retry_deadline
+    # Fast path: already initialized
+    if engine is not None:
+        return engine
+
+    # Fast rejection during retry cooldown window
+    if time.monotonic() < _retry_deadline:
+        return None
+
+    with _engine_lock:
+        # Check again in case another concurrent thread initialized it
+        if engine is not None:
+            return engine
+        # Check if another concurrent thread failed and set the cooldown
+        if time.monotonic() < _retry_deadline:
+            return None
+        try:
+            engine = AdaptiveRAGEngine()
+            return engine
+        except Exception as exc:
+            _retry_deadline = time.monotonic() + RETRY_COOLDOWN_SECONDS
+            engine = None
+            logger.error("Failed to initialize AdaptiveRAGEngine: %s", exc)
+            return None
 
 app = FastAPI(
     title="Adaptive RAG Gateway API",

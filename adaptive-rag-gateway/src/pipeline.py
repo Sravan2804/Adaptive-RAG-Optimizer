@@ -1,10 +1,18 @@
 import os
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load .env before setting defaults or importing Hugging Face / ChromaDB modules
+env_path = BASE_DIR / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=False)
+else:
+    load_dotenv(override=False)
+
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
@@ -14,7 +22,8 @@ import chromadb
 from chromadb.utils import embedding_functions
 from openai import OpenAI
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BACKEND_MINILM = "sentence-transformers/all-MiniLM-L6-v2"
+BACKEND_FALLBACK = "fallback-hashing-384"
 
 ACTION_MAP = {
     0: {"name": "SKIP",   "k": 0, "tier_cost_usd": 0.0005},
@@ -22,24 +31,41 @@ ACTION_MAP = {
     2: {"name": "DEEP",   "k": 6, "tier_cost_usd": 0.0060},
 }
 
-def get_embedding_function():
-    try:
-        return embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-    except Exception:
+class LocalFallbackEmbeddingFunction(embedding_functions.EmbeddingFunction):
+    def __init__(self, n_features: int = 384):
         from sklearn.feature_extraction.text import HashingVectorizer
-        class LocalFallbackEmbeddingFunction(embedding_functions.EmbeddingFunction):
-            def __init__(self, n_features: int = 384):
-                self.vectorizer = HashingVectorizer(n_features=n_features)
-            def __call__(self, input):
-                return self.vectorizer.transform(input).toarray().tolist()
-        return LocalFallbackEmbeddingFunction()
+        self.vectorizer = HashingVectorizer(n_features=n_features)
+
+    def __call__(self, input):
+        return self.vectorizer.transform(input).toarray().tolist()
+
+def get_embedding_function(force_fallback: bool = False) -> Tuple[embedding_functions.EmbeddingFunction, str]:
+    if not force_fallback:
+        try:
+            ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"
+            )
+            return ef, BACKEND_MINILM
+        except Exception:
+            pass
+    return LocalFallbackEmbeddingFunction(), BACKEND_FALLBACK
+
+def resolve_db_path(db_path: Optional[str] = None, corpus_root: Optional[Path] = None) -> Path:
+    if db_path:
+        return Path(db_path)
+    root = corpus_root if corpus_root is not None else (Path(".") if Path("data/knowledge_base.json").exists() else BASE_DIR)
+    cwd_db = Path("chroma_db")
+    base_db = root / "chroma_db"
+    if cwd_db.exists() and (cwd_db / "chroma.sqlite3").exists():
+        return cwd_db
+    if base_db.exists() and (base_db / "chroma.sqlite3").exists():
+        return base_db
+    return root / "chroma_db"
 
 class FallbackTokenizer:
     def encode(self, text: str):
-        # Reliable fallback: ~4 characters per token
-        return list(range(max(1, len(text) // 4)))
+        # Reliable fallback: ~4 characters per token without allocating a list
+        return range(max(1, len(text) // 4))
 
 class AdaptiveRAGEngine:
     def __init__(
@@ -52,10 +78,94 @@ class AdaptiveRAGEngine:
         self.router = joblib.load(target_model)
         self.confidence_threshold = confidence_threshold
         
-        target_db = Path(db_path) if db_path else (Path("chroma_db") if Path("chroma_db").exists() else BASE_DIR / "chroma_db")
+        target_db = resolve_db_path(db_path)
         self.client = chromadb.PersistentClient(path=str(target_db))
-        self.ef = get_embedding_function()
-        self.collection = self.client.get_collection("company_docs", embedding_function=self.ef)
+        
+        # Handle Chroma 0.6.x (strings) and <=0.5.x (objects) list_collections() safely
+        raw_cols = self.client.list_collections()
+        col_metadata = {}
+        dummy_ef = LocalFallbackEmbeddingFunction()
+        for c in raw_cols:
+            c_name = c if isinstance(c, str) else c.name
+            c_meta = c.metadata if not isinstance(c, str) else None
+            if c_meta is None:
+                try:
+                    c_meta = self.client.get_collection(c_name, embedding_function=dummy_ef).metadata
+                except Exception:
+                    c_meta = {}
+            col_metadata[c_name] = c_meta or {}
+
+        minilm_col_name = f"company_docs_{BACKEND_MINILM.replace('/', '_').replace('-', '_')}"
+
+        # Discover candidates
+        minilm_candidate_name = None
+        if minilm_col_name in col_metadata:
+            minilm_candidate_name = minilm_col_name
+        elif "company_docs" in col_metadata:
+            if col_metadata["company_docs"].get("embedding_backend") == BACKEND_MINILM:
+                minilm_candidate_name = "company_docs"
+
+        hashing_candidate_name = None
+        if "company_docs_fallback" in col_metadata:
+            hashing_candidate_name = "company_docs_fallback"
+        elif "company_docs" in col_metadata:
+            if col_metadata["company_docs"].get("embedding_backend") == BACKEND_FALLBACK:
+                hashing_candidate_name = "company_docs"
+
+        legacy_candidate_name = None
+        if "company_docs" in col_metadata:
+            if col_metadata["company_docs"].get("embedding_backend") is None:
+                legacy_candidate_name = "company_docs"
+
+        # Reject non-hashing fallback collection
+        if hashing_candidate_name == "company_docs_fallback":
+            fb_backend = col_metadata["company_docs_fallback"].get("embedding_backend")
+            if fb_backend is not None and fb_backend != BACKEND_FALLBACK:
+                raise ValueError(
+                    f"Collection 'company_docs_fallback' has incompatible backend '{fb_backend}', expected '{BACKEND_FALLBACK}'."
+                )
+
+        # Track completed corpus revision
+        minilm_rev = col_metadata.get(minilm_candidate_name, {}).get("corpus_revision") if minilm_candidate_name else None
+        hashing_rev = col_metadata.get(hashing_candidate_name, {}).get("corpus_revision") if hashing_candidate_name else None
+
+        minilm_is_ready = col_metadata.get(minilm_candidate_name, {}).get("status", "ready") == "ready" if minilm_candidate_name else False
+        hashing_is_ready = col_metadata.get(hashing_candidate_name, {}).get("status", "ready") == "ready" if hashing_candidate_name else False
+
+        selected_col_name = None
+        selected_ef = None
+
+        # Prefer MiniLM if available, ready, and its revision is current
+        if minilm_candidate_name and minilm_is_ready and (hashing_rev is None or minilm_rev == hashing_rev or minilm_rev is not None):
+            try:
+                ef, b_id = get_embedding_function(force_fallback=False)
+                if b_id == BACKEND_MINILM:
+                    selected_col_name = minilm_candidate_name
+                    selected_ef = ef
+            except Exception:
+                selected_col_name = None
+
+        # Fallback to hashing index if MiniLM cannot load or hashing has the current revision
+        if selected_col_name is None and hashing_candidate_name and hashing_is_ready:
+            ef, _ = get_embedding_function(force_fallback=True)
+            selected_col_name = hashing_candidate_name
+            selected_ef = ef
+
+        # Legacy candidate if no backend-tagged collections exist
+        if selected_col_name is None and legacy_candidate_name:
+            try:
+                ef, _ = get_embedding_function(force_fallback=False)
+            except Exception:
+                ef, _ = get_embedding_function(force_fallback=True)
+            selected_col_name = legacy_candidate_name
+            selected_ef = ef
+
+        if selected_col_name is None:
+            raise FileNotFoundError(f"No usable document collections found in ChromaDB at {target_db}.")
+
+        self.ef = selected_ef
+        self.collection_name = selected_col_name
+        self.collection = self.client.get_collection(self.collection_name, embedding_function=self.ef)
         
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key and not api_key.startswith("your_") and not api_key.startswith("mock"):

@@ -10,8 +10,9 @@ from sklearn.model_selection import cross_val_score
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 def train():
-    dataset_path = Path("data/router_dataset.csv") if Path("data/router_dataset.csv").exists() else BASE_DIR / "data" / "router_dataset.csv"
-    model_dir = Path("models") if Path("data/router_dataset.csv").exists() else BASE_DIR / "models"
+    root_dir = Path(".") if Path("data/router_dataset.csv").exists() else BASE_DIR
+    dataset_path = root_dir / "data" / "router_dataset.csv"
+    model_dir = root_dir / "models"
     model_path = model_dir / "query_router.joblib"
 
     if not dataset_path.exists():
