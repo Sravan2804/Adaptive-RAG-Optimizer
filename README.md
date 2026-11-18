@@ -17,12 +17,15 @@ An intelligent, latency-optimized Retrieval-Augmented Generation (RAG) backend e
 Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g., $k=5$) regardless of whether a user is asking an arithmetic question, requesting a single policy date, or seeking an exhaustive multi-quarter financial synthesis.
 
 ### The Inefficiencies of Static RAG:
-1. **Unnecessary Token Bloat**: Closed-book questions (*"What is 25 * 48?"*) do not require external context. Ingesting $k=5$ chunks into the prompt inflates token consumption by up to **80%+**.
+
+1. **Unnecessary Token Bloat**: Closed-book questions ("What is 25 \* 48?") do not require external context. Ingesting $k=5$ chunks into the prompt inflates token consumption by up to **80%**.
 2. **Context Poisoning & Latency Penalties**: Irrelevant context chunks add unnecessary vector search latency and can distract the LLM generator.
 3. **Under-Retrieval on Complex Queries**: Complex multi-hop queries often need deeper retrieval than a shallow static $k$ can supply.
 
 ### The Adaptive RAG Solution:
+
 **Adaptive RAG Optimizer** deploys a multi-tiered routing pipeline at the ingestion gateway:
+
 - **Tier 0 (Deterministic Fast-Path)**: Sub-0.05ms regex classification for arithmetic calculations and standalone greetings.
 - **Tier 1 (`SKIP`, $k=0$)**: Bypass vector search completely for closed-book, reasoning, or chit-chat queries.
 - **Tier 2 (`NARROW`, $k=2$)**: Retrieve minimal targeted context for direct factual lookups.
@@ -36,6 +39,7 @@ Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g
 ### What Classifier Did We Use and Why?
 
 The query router uses an end-to-end `scikit-learn` pipeline:
+
 ```python
 Pipeline([
     ("hasher", HashingVectorizer(n_features=4096, alternate_sign=False, ngram_range=(1, 2), norm=None)),
@@ -45,11 +49,13 @@ Pipeline([
 ```
 
 #### 1. Why Logistic Regression Instead of a Heavy Transformer (BERT / MiniLM)?
-- **Critical-Path Latency (< 2ms vs 30-100ms)**: The query router sits directly in the synchronous path of *every* incoming request. Using a heavy transformer router adds 30–80ms of CPU inference overhead, defeating the purpose of latency reduction on simple queries. Logistic Regression executes in **~1.8 milliseconds**.
+
+- **Critical-Path Latency (< 2ms vs 30-100ms)**: The query router sits directly in the synchronous path of _every_ incoming request. Using a heavy transformer router adds 30–80ms of CPU inference overhead, defeating the purpose of latency reduction on simple queries. Logistic Regression executes in **~1.8 milliseconds**.
 - **Calibrated Softmax Probabilities**: Logistic Regression natively outputs smooth, well-calibrated posterior probabilities $\sigma(W x + b)$. This is **essential for our Uncertainty Guardrail**: when $\max P(y \mid x) < 0.45$, the gateway automatically falls back to `NARROW` ($k=2$). In contrast, Naive Bayes exhibits extreme probability polarization (pushing confidences artificially to $0.0$ or $1.0$), while SVMs require expensive Platt scaling.
 - **Zero GPU / Minimal Runtime**: The trained artifact is **~132 KB** on disk. It requires no GPU, no CUDA drivers, and incurs zero cold-start delay.
 
 #### 2. Why `HashingVectorizer` Replaced the String Dictionary?
+
 - In standard `TfidfVectorizer`, an in-memory string vocabulary dictionary is stored and serialized with the model.
 - By using `HashingVectorizer(norm=None)` with 4,096 feature buckets and bi-grams (`ngram_range=(1, 2)`):
   - **Stateless & OOV Resilient**: The feature mapping uses MurmurHash3, completely eliminating the vocabulary dictionary from memory.
@@ -57,7 +63,9 @@ Pipeline([
   - `norm=None` passes raw bucket counts to `TfidfTransformer(sublinear_tf=True)`, which applies IDF weighting, sublinear term-frequency dampening ($1 + \log(\text{tf})$), and L2 normalization.
 
 #### 3. Multi-Tiered Hybrid Fast-Path (0.018ms Benchmark Latency)
+
 Before executing vectorization and classifier inference, queries pass through pre-compiled regex filters that match arithmetic expressions and standalone greetings. Unmatched queries (such as unit conversions or questions with topics) bypass the fast-path and proceed to the ML classifier; if the classifier chooses Class 0, the query returns `SKIP` with `fast_path: false`.
+
 - In benchmark measurements under local test conditions, fast-path queries achieved a router decision latency of **0.018 ms** (a **99% reduction in routing decision latency** compared to the ~1.8 ms ML classifier).
 
 ---
@@ -67,39 +75,39 @@ Before executing vectorization and classifier inference, queries pass through pr
 ```mermaid
 flowchart TD
     UserQuery["Incoming User Request"] --> Endpoint{"Target Endpoint"}
-    
+
     %% /route Flow
     Endpoint -- "POST /route" --> RouteFastPath{"Fast-Path Regex Match?<br/>(Math, Standalone Greetings)"}
     RouteFastPath -- "Yes" --> RouteFastResp["Immediate Response (k=0, SKIP, fast_path: true)<br/>No retrieval, no generation"]
     RouteFastPath -- "No" --> RouteML["Hashing ML Router + Guardrail"]
     RouteML --> RouteMLResp["Immediate Response (class_id, tier, k, confidence)<br/>No retrieval, no generation"]
-    
+
     %% /query Flow
     Endpoint -- "POST /query" --> ModeCheck{"Execution Mode"}
-    
+
     %% Static Mode
     ModeCheck -- "mode = 'static'" --> StaticRetrieval["Bypass Router: Retrieve static_k Chunks<br/>from ChromaDB Vector Store"]
     StaticRetrieval --> StaticPrompt["Assemble Contextual Prompt"]
     StaticPrompt --> StaticGen["LLM Generator / Synthesizer"]
     StaticGen --> StaticResp["Return Final Answer + Static Metrics"]
-    
+
     %% Adaptive Mode
     ModeCheck -- "mode = 'adaptive'" --> AdaptFastPath{"Fast-Path Regex Match?<br/>(Math, Standalone Greetings)"}
     AdaptFastPath -- "Yes" --> AdaptSkip["SKIP Tier (k=0): Zero Vector Retrieval"]
-    
+
     AdaptFastPath -- "No" --> AdaptML["Hashing ML Router (4096 Buckets)"]
     AdaptML --> AdaptConf{"Confidence >= 0.45?"}
     AdaptConf -- "No (Uncertain)" --> AdaptFallback["Safety Guardrail: Fallback to NARROW (k=2)"]
     AdaptConf -- "Yes" --> AdaptTier{"Predicted Tier"}
-    
+
     AdaptTier -- "Class 0" --> AdaptSkip
     AdaptTier -- "Class 1" --> AdaptNarrow["NARROW Tier (k=2): Factual Retrieval"]
     AdaptTier -- "Class 2" --> AdaptDeep["DEEP Tier (k=6): Multi-Hop Retrieval"]
-    
+
     AdaptFallback --> AdaptChroma[("ChromaDB Vector Store")]
     AdaptNarrow --> AdaptChroma
     AdaptDeep --> AdaptChroma
-    
+
     AdaptSkip --> AdaptPrompt["Assemble Prompt (Context if any)"]
     AdaptChroma --> AdaptPrompt
     AdaptPrompt --> AdaptGen["LLM Generator / Synthesizer"]
@@ -123,11 +131,11 @@ The project includes a self-contained, offline-ready single-page dashboard serve
 
 ## 📊 Action Tiers & Cost Model
 
-| Tier | Class ID | Chunk Budget ($k$) | Intended Query Complexity | Avg. Input Tokens | Tier Cost (USD) | Example Query |
-|---|:---:|:---:|---|:---:|:---:|---|
-| **`SKIP`** | `0` | $0$ | Closed-book, arithmetic, definitions | ~27 | \$0.0005 | *"What is 25 * 48?"* |
-| **`NARROW`** | `1` | $2$ | Direct factual policy / product lookup | ~83 | \$0.0020 | *"What is the EU cooling-off period for digital goods?"* |
-| **`DEEP`** | `2` | $6$ | Cross-document analysis, synthesis | ~200 | \$0.0060 | *"Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened."* |
+| Tier         | Class ID | Chunk Budget ($k$) | Intended Query Complexity              | Avg. Input Tokens | Tier Cost (USD) | Example Query                                                                      |
+| ------------ | :------: | :----------------: | -------------------------------------- | :---------------: | :-------------: | ---------------------------------------------------------------------------------- |
+| **`SKIP`**   |   `0`    |        $0$         | Closed-book, arithmetic, definitions   |        ~27        |    \$0.0005     | _"What is 25 _ 48?"\*                                                              |
+| **`NARROW`** |   `1`    |        $2$         | Direct factual policy / product lookup |        ~83        |    \$0.0020     | _"What is the EU cooling-off period for digital goods?"_                           |
+| **`DEEP`**   |   `2`    |        $6$         | Cross-document analysis, synthesis     |       ~200        |    \$0.0060     | _"Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened."_ |
 
 ---
 
@@ -151,7 +159,7 @@ Average Input Token Reduction: 38.7%
 ```
 
 > [!NOTE]
-> Latency figures represent benchmark measurements under local test conditions rather than runtime guarantees. For fast-path queries (*"What is 25 * 48?"*), router decision latency measured **0.018 ms** (a 99% reduction vs the ~1.8 ms ML classifier), and end-to-end query latency measured **0.08 ms** using local direct/synthetic generation output (excluding external LLM API network transport), achieving an **83.8% input token reduction** with zero vector retrieval.
+> Latency figures represent benchmark measurements under local test conditions rather than runtime guarantees. For fast-path queries (_"What is 25 _ 48?"\*), router decision latency measured **0.018 ms** (a 99% reduction vs the ~1.8 ms ML classifier), and end-to-end query latency measured **0.08 ms** using local direct/synthetic generation output (excluding external LLM API network transport), achieving an **83.8% input token reduction** with zero vector retrieval.
 
 ---
 
@@ -227,14 +235,17 @@ HF_HUB_DISABLE_SYMLINKS_WARNING=1
 ## 🛠️ Execution Guide
 
 ### Step 1: Train the Complexity Router
+
 Train the stateless HashingVectorizer and Logistic Regression classifier:
 
 ```bash
 python src/train_router.py
 ```
-*Output: Saves the trained model (~132 KB) to `models/query_router.joblib`.*
+
+_Output: Saves the trained model (~132 KB) to `models/query_router.joblib`._
 
 ### Step 2: Ingest Documents into Vector Store
+
 Ingest `data/knowledge_base.json` into ChromaDB:
 
 ```bash
@@ -242,6 +253,7 @@ python src/ingest.py
 ```
 
 ### Step 3: Run Comparative Benchmarks
+
 Evaluate latency and token savings against the baseline:
 
 ```bash
@@ -249,6 +261,7 @@ python src/benchmark.py
 ```
 
 ### Step 4: Run the Test Suite
+
 Execute the comprehensive offline-safe test suite:
 
 ```bash
@@ -256,6 +269,7 @@ python tests/test_api.py --direct
 ```
 
 ### Step 5: Launch the Server & Open Dashboard
+
 Start the web service:
 
 ```bash
@@ -270,6 +284,7 @@ python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ## 🔌 API Reference
 
 ### 1. Real-Time Analytics Endpoint
+
 **`GET /analytics`**
 
 Returns live cumulative token metrics, tier distribution, fast-path ratio, and estimated cost savings.
@@ -279,6 +294,7 @@ curl -X GET http://127.0.0.1:8000/analytics
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "total_queries": 42,
@@ -313,6 +329,7 @@ curl -X GET http://127.0.0.1:8000/analytics
 ---
 
 ### 2. Route Query Endpoint
+
 **`POST /route`**
 
 Classifies the query and returns the recommended tier without performing retrieval.
@@ -324,6 +341,7 @@ curl -X POST http://127.0.0.1:8000/route \
 ```
 
 **Response (200 OK - Fast-Path):**
+
 ```json
 {
   "class_id": 0,
@@ -339,6 +357,7 @@ curl -X POST http://127.0.0.1:8000/route \
 ---
 
 ### 3. Full Query & Retrieval Endpoint
+
 **`POST /query`**
 
 Routes the query, retrieves chunks if $k > 0$, and synthesizes the final response.
