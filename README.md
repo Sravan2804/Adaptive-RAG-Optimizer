@@ -13,15 +13,18 @@ An intelligent, latency-optimized Retrieval-Augmented Generation (RAG) backend e
 
 ## 📖 Executive Summary
 
-Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g., $k=5$) regardless of whether a user is asking a basic arithmetic question, requesting a single policy date, or seeking an exhaustive multi-quarter financial synthesis. 
+Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g., $k=5$) regardless of whether a user is asking a basic arithmetic question, requesting a single policy date, or seeking an exhaustive multi-quarter financial synthesis.
 
 ### The Inefficiencies of Static RAG:
-1. **Unnecessary Token Bloat**: Closed-book questions (*"What is 25 * 48?"*) do not require external context. Ingesting $k=5$ chunks into the prompt inflates token consumption by up to **80%+**.
+
+1. **Unnecessary Token Bloat**: Closed-book questions (_"What is 25 _ 48?"\*) do not require external context. Ingesting $k=5$ chunks into the prompt inflates token consumption by up to **80%+**.
 2. **Context Poisoning & Latency Penalties**: Irrelevant context chunks add unnecessary vector search latency and can distract the LLM generator.
 3. **Under-Retrieval on Complex Queries**: Complex multi-hop queries often need deeper retrieval than a shallow static $k$ can supply.
 
 ### The Adaptive RAG Solution:
+
 **Adaptive RAG Optimizer** deploys a ultra-lightweight, sub-millisecond machine learning classifier at the ingestion gateway. Queries are dynamically routed to three retrieval tiers:
+
 - **`SKIP` ($k=0$)**: Bypass vector search completely for closed-book, reasoning, or chit-chat queries.
 - **`NARROW` ($k=2$)**: Retrieve minimal targeted context for direct factual lookups.
 - **`DEEP` ($k=6$)**: Retrieve broader context for synthesis, comparisons, and complex reasoning.
@@ -35,23 +38,23 @@ Conventional RAG pipelines query vector databases with a fixed chunk budget (e.g
 flowchart TD
     UserQuery["User Query"] --> GatewayAPI["FastAPI Gateway (/route or /query)"]
     GatewayAPI --> RouterClassifier["Query Router Classifier<br/>(TF-IDF + Naive Bayes, ~1-2 ms)"]
-    
+
     RouterClassifier --> ConfCheck{"Confidence >= 0.45?"}
-    
+
     ConfCheck -- "Yes" --> BranchClass{"Predicted Tier"}
     ConfCheck -- "No (Uncertain)" --> GuardrailFallback["Safety Fallback: NARROW (k=2)"]
-    
+
     BranchClass -- "Class 0" --> SkipTier["SKIP Tier (k=0)<br/>Zero Vector Search"]
     BranchClass -- "Class 1" --> NarrowTier["NARROW Tier (k=2)<br/>Targeted Factual Retrieval"]
     BranchClass -- "Class 2" --> DeepTier["DEEP Tier (k=6)<br/>Multi-hop / Synthesis Retrieval"]
-    
+
     GuardrailFallback --> ChromaDB[("ChromaDB Vector Store<br/>(MiniLM-L6-v2 / Offline Fallback)")]
     NarrowTier --> ChromaDB
     DeepTier --> ChromaDB
-    
+
     SkipTier --> PromptAssembler["Prompt Assembler & Tiktoken Encoder"]
     ChromaDB --> PromptAssembler
-    
+
     PromptAssembler --> LLMGenerator["OpenAI LLM / Contextual Synthesizer"]
     LLMGenerator --> ClientResponse["JSON Response (Answer, Latency, Tokens, Cost)"]
 ```
@@ -79,11 +82,11 @@ flowchart TD
 
 ## 📊 Action Tiers & Cost Model
 
-| Tier | Class ID | Chunk Budget ($k$) | Intended Query Complexity | Avg. Input Tokens | Tier Cost (USD) | Example Query |
-|---|:---:|:---:|---|:---:|:---:|---|
-| **`SKIP`** | `0` | $0$ | Closed-book, arithmetic, definitions | ~27 | \$0.0005 | *"What is 25 * 48?"* |
-| **`NARROW`** | `1` | $2$ | Direct factual policy / product lookup | ~83 | \$0.0020 | *"What is the EU cooling-off period for digital goods?"* |
-| **`DEEP`** | `2` | $6$ | Cross-document analysis, synthesis | ~200 | \$0.0060 | *"Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened."* |
+| Tier         | Class ID | Chunk Budget ($k$) | Intended Query Complexity              | Avg. Input Tokens | Tier Cost (USD) | Example Query                                                                      |
+| ------------ | :------: | :----------------: | -------------------------------------- | :---------------: | :-------------: | ---------------------------------------------------------------------------------- |
+| **`SKIP`**   |   `0`    |        $0$         | Closed-book, arithmetic, definitions   |        ~27        |    \$0.0005     | _"What is 25 _ 48?"\*                                                              |
+| **`NARROW`** |   `1`    |        $2$         | Direct factual policy / product lookup |        ~83        |    \$0.0020     | _"What is the EU cooling-off period for digital goods?"_                           |
+| **`DEEP`**   |   `2`    |        $6$         | Cross-document analysis, synthesis     |       ~200        |    \$0.0060     | _"Compare churn rates across Q1, Q2, and Q3 and explain why each shift happened."_ |
 
 ---
 
@@ -107,7 +110,7 @@ Average Input Token Reduction: 38.7%
 ```
 
 > [!NOTE]
-> For complex queries (*Class 2*), adaptive mode intentionally allocates slightly more tokens ($k=6$ vs static $k=5$) to guarantee multi-document coverage and avoid hallucination. The net efficiency across general workloads yields an average **38.7% token reduction**.
+> For complex queries (_Class 2_), adaptive mode intentionally allocates slightly more tokens ($k=6$ vs static $k=5$) to guarantee multi-document coverage and avoid hallucination. The net efficiency across general workloads yields an average **38.7% token reduction**.
 
 ---
 
@@ -184,22 +187,27 @@ HF_HUB_DISABLE_SYMLINKS_WARNING=1
 ## 🛠️ Step-by-Step Execution Guide
 
 ### Step 1: Train the Complexity Router
+
 Train the TF-IDF and Naive Bayes classifier on the labeled query dataset:
 
 ```bash
 python src/train_router.py
 ```
-*Output: Saves the trained model to `models/query_router.joblib`.*
+
+_Output: Saves the trained model to `models/query_router.joblib`._
 
 ### Step 2: Ingest Documents into Vector Store
+
 Ingest `data/knowledge_base.json` into ChromaDB:
 
 ```bash
 python src/ingest.py
 ```
-*Output: Builds `company_docs` with `all-MiniLM-L6-v2` and fallback `company_docs_fallback` with revision fingerprints.*
+
+_Output: Builds `company_docs` with `all-MiniLM-L6-v2` and fallback `company_docs_fallback` with revision fingerprints._
 
 ### Step 3: Run Comparative Benchmarks
+
 Evaluate latency and token savings against the baseline:
 
 ```bash
@@ -207,14 +215,17 @@ python src/benchmark.py
 ```
 
 ### Step 4: Run the Test Suite
+
 Execute the comprehensive offline-safe test suite:
 
 ```bash
 python tests/test_api.py --direct
 ```
+
 Runs 7 test scenarios including route classification, adaptive retrieval, 503 error handling, ASGI transport, and monotonic clock cooldown retries.
 
 ### Step 5: Launch the FastAPI Gateway Server
+
 Start the web service:
 
 ```bash
@@ -229,6 +240,7 @@ python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ## 🔌 API Reference
 
 ### 1. Health & Readiness Check
+
 **`GET /health`**
 
 Inspect server status, model loading state, and active tier configurations.
@@ -238,14 +250,15 @@ curl -X GET http://127.0.0.1:8000/health
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "status": "healthy",
   "engine_loaded": true,
   "action_tiers": {
-    "0": {"name": "SKIP", "k": 0, "tier_cost_usd": 0.0005},
-    "1": {"name": "NARROW", "k": 2, "tier_cost_usd": 0.002},
-    "2": {"name": "DEEP", "k": 6, "tier_cost_usd": 0.006}
+    "0": { "name": "SKIP", "k": 0, "tier_cost_usd": 0.0005 },
+    "1": { "name": "NARROW", "k": 2, "tier_cost_usd": 0.002 },
+    "2": { "name": "DEEP", "k": 6, "tier_cost_usd": 0.006 }
   }
 }
 ```
@@ -253,6 +266,7 @@ curl -X GET http://127.0.0.1:8000/health
 ---
 
 ### 2. Route Query Endpoint
+
 **`POST /route`**
 
 Classifies the query and returns the recommended retrieval tier without executing retrieval.
@@ -264,6 +278,7 @@ curl -X POST http://127.0.0.1:8000/route \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "class_id": 1,
@@ -278,11 +293,13 @@ curl -X POST http://127.0.0.1:8000/route \
 ---
 
 ### 3. Full Query & Retrieval Endpoint
+
 **`POST /query`**
 
 Routes the query, retrieves chunks if $k > 0$, and synthesizes the final response.
 
 #### Adaptive Mode Request:
+
 ```bash
 curl -X POST http://127.0.0.1:8000/query \
   -H "Content-Type: application/json" \
@@ -293,6 +310,7 @@ curl -X POST http://127.0.0.1:8000/query \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "mode": "adaptive",
@@ -302,12 +320,13 @@ curl -X POST http://127.0.0.1:8000/query \
   "input_tokens": 83,
   "router_ms": 1.97,
   "retrieval_ms": 28.73,
-  "total_latency_ms": 32.50,
+  "total_latency_ms": 32.5,
   "tier_cost_usd": 0.002
 }
 ```
 
 #### Static Override Request ($k=3$):
+
 ```bash
 curl -X POST http://127.0.0.1:8000/query \
   -H "Content-Type: application/json" \
