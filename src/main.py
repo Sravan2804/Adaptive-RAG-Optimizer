@@ -139,8 +139,10 @@ class AnalyticsTracker:
 
 tracker = AnalyticsTracker()
 
+_last_init_error: Optional[str] = None
+
 def get_engine() -> Optional[AdaptiveRAGEngine]:
-    global engine, _retry_deadline
+    global engine, _retry_deadline, _last_init_error
     # Fast path: already initialized
     if engine is not None:
         return engine
@@ -158,6 +160,7 @@ def get_engine() -> Optional[AdaptiveRAGEngine]:
             return None
         try:
             engine = AdaptiveRAGEngine()
+            _last_init_error = None
             return engine
         except FileNotFoundError as fnf:
             logger.warning("Vector store missing on startup (%s). Auto-running ingestion...", fnf)
@@ -168,15 +171,18 @@ def get_engine() -> Optional[AdaptiveRAGEngine]:
                     from src.ingest import build_vector_store
                 build_vector_store()
                 engine = AdaptiveRAGEngine()
+                _last_init_error = None
                 return engine
             except Exception as ingest_exc:
                 _retry_deadline = time.monotonic() + RETRY_COOLDOWN_SECONDS
                 engine = None
+                _last_init_error = f"Ingest error: {type(ingest_exc).__name__}: {ingest_exc}"
                 logger.error("Failed to auto-ingest knowledge base: %s", ingest_exc)
                 return None
         except Exception as exc:
             _retry_deadline = time.monotonic() + RETRY_COOLDOWN_SECONDS
             engine = None
+            _last_init_error = f"Init error: {type(exc).__name__}: {exc}"
             logger.error("Failed to initialize AdaptiveRAGEngine: %s", exc)
             return None
 
@@ -185,6 +191,11 @@ app = FastAPI(
     description="Adaptive Retrieval-Augmented Generation routing gateway based on query complexity",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    # Warm up engine immediately in background on app start
+    asyncio.create_task(asyncio.to_thread(get_engine))
 
 class RouteRequest(BaseModel):
     query: str = Field(..., example="What is the EU cooling-off period for digital goods?")
@@ -204,9 +215,13 @@ async def dashboard():
 
 @app.get("/health")
 async def health():
+    eng = engine
+    if eng is None and time.monotonic() >= _retry_deadline:
+        eng = await asyncio.to_thread(get_engine)
     return {
         "status": "healthy",
-        "engine_loaded": engine is not None,
+        "engine_loaded": eng is not None,
+        "init_error": _last_init_error if eng is None else None,
         "action_tiers": ACTION_MAP
     }
 
@@ -218,7 +233,10 @@ async def analytics():
 async def route_query_endpoint(req: RouteRequest):
     eng = await asyncio.to_thread(get_engine)
     if eng is None:
-        raise HTTPException(status_code=503, detail="Engine not initialized. Ensure models and vector store exist.")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Engine not initialized. {_last_init_error or 'Initializing, please retry in a moment.'}"
+        )
     res = await asyncio.to_thread(eng.route_query, req.query)
     tracker.record_route(res)
     return res
@@ -227,7 +245,10 @@ async def route_query_endpoint(req: RouteRequest):
 async def run_query_endpoint(req: QueryRequest):
     eng = await asyncio.to_thread(get_engine)
     if eng is None:
-        raise HTTPException(status_code=503, detail="Engine not initialized. Ensure models and vector store exist.")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Engine not initialized. {_last_init_error or 'Initializing, please retry in a moment.'}"
+        )
     res = await asyncio.to_thread(eng.run, query=req.query, mode=req.mode, static_k=req.static_k)
     tracker.record_query(res)
     return res

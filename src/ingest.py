@@ -14,7 +14,7 @@ if env_path.exists():
 else:
     load_dotenv(override=False)
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "0")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import chromadb

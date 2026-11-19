@@ -30,7 +30,7 @@ if env_path.exists():
 else:
     load_dotenv(override=False)
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "0")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import joblib
@@ -92,7 +92,17 @@ class AdaptiveRAGEngine:
         db_path: Optional[str] = None
     ):
         target_model = Path(model_path) if model_path else (Path("models/query_router.joblib") if Path("models/query_router.joblib").exists() else BASE_DIR / "models" / "query_router.joblib")
-        self.router = joblib.load(target_model)
+        try:
+            if not target_model.exists():
+                raise FileNotFoundError(f"Model {target_model} missing")
+            self.router = joblib.load(target_model)
+        except Exception as load_exc:
+            try:
+                from train_router import train
+            except ImportError:
+                from src.train_router import train
+            train()
+            self.router = joblib.load(target_model)
         self.confidence_threshold = confidence_threshold
         
         target_db = resolve_db_path(db_path)
@@ -187,6 +197,36 @@ class AdaptiveRAGEngine:
                     legacy_candidate_name = None  # hashing backend for untagged collection is unsafe
             except Exception:
                 legacy_candidate_name = None
+
+        # Auto-build vector store if no usable collections exist
+        if selected_col_name is None:
+            try:
+                try:
+                    from ingest import build_vector_store
+                except ImportError:
+                    from src.ingest import build_vector_store
+                build_vector_store(db_path=str(target_db))
+                # Re-check collections
+                for c in self.client.list_collections():
+                    c_name = c if isinstance(c, str) else c.name
+                    try:
+                        c_meta = self.client.get_collection(c_name, embedding_function=dummy_ef).metadata or {}
+                    except Exception:
+                        c_meta = {}
+                    col_metadata[c_name] = c_meta
+                if minilm_col_name in col_metadata or "company_docs" in col_metadata:
+                    try:
+                        ef, b_id = get_embedding_function(force_fallback=False)
+                        selected_col_name = minilm_col_name if minilm_col_name in col_metadata else "company_docs"
+                        selected_ef = ef
+                    except Exception:
+                        pass
+                if selected_col_name is None and "company_docs_fallback" in col_metadata:
+                    ef, _ = get_embedding_function(force_fallback=True)
+                    selected_col_name = "company_docs_fallback"
+                    selected_ef = ef
+            except Exception:
+                pass
 
         if selected_col_name is None:
             detail = hashing_conflict_reason or "Run ingest.py to create the vector store."
